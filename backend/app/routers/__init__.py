@@ -1,0 +1,1 @@
+"""Role-guarded REST routes."""

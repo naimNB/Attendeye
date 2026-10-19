@@ -1,0 +1,98 @@
+attendeye/
+├── backend/
+│   ├── app/
+│   │   ├── routers/
+│   │   │   ├── __init__.py
+│   │   │   ├── admin.py
+│   │   │   ├── analytics.py
+│   │   │   ├── attendance.py
+│   │   │   ├── auth.py
+│   │   │   ├── checkin.py
+│   │   │   ├── enrol.py
+│   │   │   ├── reports.py
+│   │   │   └── sessions.py
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── attendance.py
+│   │   │   ├── challenges.py
+│   │   │   ├── face_engine.py
+│   │   │   ├── liveness.py
+│   │   │   ├── locks.py
+│   │   │   ├── matching.py
+│   │   │   ├── privacy.py
+│   │   │   ├── recognition.py
+│   │   │   ├── reports.py
+│   │   │   └── uploads.py
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── deps.py
+│   │   ├── main.py
+│   │   ├── models.py
+│   │   ├── schemas.py
+│   │   └── security.py
+│   ├── scripts/
+│   │   ├── cleanup.py
+│   │   ├── download_face_model.py
+│   │   ├── download_minifas.py
+│   │   ├── init_env.py
+│   │   └── seed.py
+│   ├── tests/
+│   │   ├── conftest.py
+│   │   ├── test_attendance.py
+│   │   ├── test_evaluation.py
+│   │   ├── test_liveness_qr.py
+│   │   ├── test_matching.py
+│   │   └── test_security.py
+│   ├── .env.example
+│   ├── pytest.ini
+│   └── requirements.txt
+├── docs/
+│   ├── DEMO_SCRIPT.md
+│   ├── DIAGRAMS.md
+│   ├── MASTER_PROMPT.md
+│   ├── PRIVACY.md
+│   ├── REPORT.md
+│   ├── SECURITY_AUDIT.md
+│   ├── SLIDES.md
+│   ├── TEAM_PLAN.md
+│   ├── VERIFICATION.md
+│   └── VIVA.md
+├── evaluation/
+│   ├── README.md
+│   ├── benchmark.py
+│   ├── consent_form.md
+│   ├── data_collection_checklist.md
+│   ├── evaluate.py
+│   └── metrics.py
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   │   └── client.js
+│   │   ├── components/
+│   │   │   ├── Auth.jsx
+│   │   │   ├── Layout.jsx
+│   │   │   ├── UI.jsx
+│   │   │   └── Webcam.jsx
+│   │   ├── pages/
+│   │   │   ├── Admin.jsx
+│   │   │   ├── Analytics.jsx
+│   │   │   ├── Checkin.jsx
+│   │   │   ├── Enrol.jsx
+│   │   │   ├── Login.jsx
+│   │   │   ├── SessionDetail.jsx
+│   │   │   ├── Sessions.jsx
+│   │   │   └── Student.jsx
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── styles.css
+│   ├── .env.example
+│   ├── index.html
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── .gitignore
+├── FILE_TREE.txt
+├── README.md
+└── requirements.txt

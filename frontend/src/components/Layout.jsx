@@ -1,0 +1,8 @@
+import { Link, NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from './Auth';
+export default function Layout() {
+  const { user, logout } = useAuth();
+  const links = user.role === 'student' ? [['/', 'My attendance'], ['/enrol', 'Face enrolment'], ['/checkin', 'QR check-in']] : [['/', 'Overview'], ['/sessions', 'Class sessions'], ['/analytics', 'Analytics']];
+  if (user.role === 'admin') links.push(['/admin', 'Administration']);
+  return <div className="min-h-screen"><header className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-wrap items-center gap-5 px-5 py-4"><Link to="/" className="mr-auto flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-pine font-bold text-mint">AE</span><span className="font-bold tracking-tight">PUB AttendEye<span className="block text-xs font-normal text-slate-500">Smart attendance · Track B4</span></span></Link><span className="badge">{user.role}</span><span className="text-sm">{user.name}</span><button className="btn secondary" onClick={logout}>Sign out</button></div></header><div className="mx-auto grid max-w-7xl gap-6 px-5 py-7 md:grid-cols-[190px_1fr]"><aside><nav className="flex flex-wrap gap-2 md:flex-col">{links.map(([path, name]) => <NavLink key={path} to={path} end={path === '/'} className={({ isActive }) => `rounded-xl px-4 py-3 text-sm font-medium ${isActive ? 'bg-pine text-white' : 'text-slate-600 hover:bg-white'}`}>{name}</NavLink>)}</nav><p className="muted mt-8 hidden px-4 md:block">Consent first.<br/>Human review always available.</p></aside><main className="min-w-0 space-y-4"><Outlet/></main></div></div>;
+}
