@@ -18,18 +18,20 @@ This is an implementation review, not an independent penetration test. The proje
 | Review | Candidate IDs only from class gallery; manual reason required | Human mistakes remain possible |
 | Audit | Append-only API semantics; actor/status/reason | Database administrators can modify storage; no hash chain |
 | Automatic overwrite | Existing records, especially manual corrections, preserved | Teacher must resolve corrections explicitly |
-| Live challenge | Random prompt, 15-second expiry, subject/session binding, atomic one-use claim | Client-supplied frames are not hardware-attested |
-| QR | 30-second window; purpose/session checks; unique student/session redemption | Token relay remains possible; not location proof |
-| QR bypass | Standard capture/review/correction cannot create unverified QR presence | Operator may choose a separate standard session for a manual alternative |
-| Race handling | Single-worker mutation lock; DB unique constraints; atomic challenge update | Multiworker/multihost deployment requires redesigned coordination |
+| Live challenge & QR ticket | Start-and-complete protocol: raw QR validated at start issuing 15-second CheckinTicket; subject/session/challenge binding, atomic one-use nonce redemption; adaptive sampling (~160ms for blink, ~320ms for turn) | Client-supplied frames are not hardware-attested |
+| QR | 30-second window; purpose/session checks; unique student/session redemption; ticket prevents window-boundary submission loss | Token relay remains possible; not location proof |
+| QR bypass | Standard capture/review/correction cannot create unverified QR presence; ticket reservation alone cannot mark attendance | Operator may choose a separate standard session for a manual alternative |
+| Enrolment poses | Signed yaw/pitch thresholds (left yaw >= 10°, right yaw <= -10°, up pitch <= -8°, down pitch >= 8°); supervised first enrolment | Camera mirroring conventions vary across hardware; teacher supervision required |
+| Liveness status | Authenticated GET /liveness/status reports active backend without leaking model paths, weights, or server keys | Baseline mode conservative fallback remains review-only |
+| Race handling | Scoped DB transactions, DB unique constraints, atomic ticket/challenge update; mutation lock released during neural inference | Multiworker/multihost deployment requires external distributed coordination |
 | Reports | Role checks, fixed filenames, CSV formula neutralisation, XML escaping | Downloaded exports become the recipient's responsibility |
-| Logging | Counts/backend/timing only; generic unexpected errors | Operators must avoid proxy body/header logs |
+| Logging | Counts/backend/timing only; generic unexpected errors; no biometric content | Operators must avoid proxy body/header logs |
 | Analytics | Section scoping; DEMO opt-in banner | At-risk labels are descriptive, not disciplinary recommendations |
 | Evaluation | No synthetic claims; raw dataset excluded; explicit nonresponse metrics | Manual dataset consent, leakage and retention review still required |
 
 ## Tests supplied
 
-`test_security.py` checks encryption, expiry/purpose, role/section boundaries, consent, deletion, thumbnail expiry, type/size validation, CORS, rate limiting and session windows. `test_liveness_qr.py` checks motion sequences, small crops, challenge binding/reuse, QR windows, duplicate check-in and a mocked complete two-factor path. `test_attendance.py` checks denominators, close behaviour, correction audit and automatic overwrite protection. Matching and evaluation tests use synthetic vectors/scores only.
+`test_security.py` checks encryption, expiry/purpose, role/section boundaries, consent, deletion, thumbnail expiry, signed pose direction checks, type/size validation, CORS, rate limiting and session windows. `test_liveness_qr.py` checks motion sequences, small crops, challenge binding/reuse, QR window boundaries, start-and-ticket completion, ticket mismatch/expiry, one bad frame vs sufficient evidence, duplicate check-in and full path. `test_attendance.py` checks denominators, close behaviour, correction audit and automatic overwrite protection. Matching and evaluation tests use synthetic vectors/scores only.
 
 ## Operational review before demonstration
 

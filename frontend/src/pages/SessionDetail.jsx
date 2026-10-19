@@ -16,9 +16,9 @@ function ReviewCard({ item, roster, resolve, busy }) {
 export default function SessionDetail() {
   const { id } = useParams(), task = useTask(), camera = useRef();
   const [session, setSession] = useState(null), [roster, setRoster] = useState([]), [reviews, setReviews] = useState([]), [records, setRecords] = useState([]), [tab, setTab] = useState('capture');
-  const [cameraOn, setCameraOn] = useState(false), [consent, setConsent] = useState(false), [file, setFile] = useState(null), [result, setResult] = useState(null), [preview, setPreview] = useState(''), [phase, setPhase] = useState(''), [prompt, setPrompt] = useState(null), [debug, setDebug] = useState(false), [qr, setQr] = useState(null), [qrError, setQrError] = useState(''), [editing, setEditing] = useState(null), [audit, setAudit] = useState([]);
+  const [cameraOn, setCameraOn] = useState(false), [consent, setConsent] = useState(false), [file, setFile] = useState(null), [result, setResult] = useState(null), [preview, setPreview] = useState(''), [previewFrame, setPreviewFrame] = useState(0), [phase, setPhase] = useState(''), [prompt, setPrompt] = useState(null), [debug, setDebug] = useState(false), [qr, setQr] = useState(null), [qrError, setQrError] = useState(''), [editing, setEditing] = useState(null), [audit, setAudit] = useState([]), [livenessStatus, setLivenessStatus] = useState(null);
   async function load() { const [s, u, r, a, h] = await Promise.all([api.get(`/sessions/${id}`), api.get(`/sessions/${id}/roster`), api.get(`/sessions/${id}/review`), api.get(`/sessions/${id}/records`), api.get(`/sessions/${id}/audit`)]); setSession(s.data); setRoster(u.data); setReviews(r.data); setRecords(a.data); setAudit(h.data); }
-  useEffect(() => { task.run(load); }, [id]);
+  useEffect(() => { task.run(load); api.get('/liveness/status').then(r => setLivenessStatus(r.data)).catch(() => {}); }, [id]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   useEffect(() => {
     if (!session?.require_qr || session.status !== 'open') return;
@@ -27,21 +27,47 @@ export default function SessionDetail() {
     refresh(); return () => { cancelled = true; clearTimeout(timer); };
   }, [id, session?.require_qr, session?.status]);
   async function submitPhoto() {
-    await task.run(async () => { const body = new FormData(); body.append('image', file); body.append('volunteers_confirmed', consent); body.append('debug', debug); setPreview(URL.createObjectURL(file)); setPhase('Detecting faces, checking liveness and matching the class roster…'); const { data } = await api.post(`/sessions/${id}/capture-photo`, body); setResult(data); await load(); });
+    await task.run(async () => {
+      try {
+        const body = new FormData(); body.append('image', file); body.append('volunteers_confirmed', consent); body.append('debug', debug);
+        setPreviewFrame(0);
+        setPreview(URL.createObjectURL(file));
+        setPhase('Detecting faces, checking liveness and matching the class roster…');
+        const { data } = await api.post(`/sessions/${id}/capture-photo`, body);
+        setResult(data);
+        await load();
+      } catch (err) {
+        setResult(null);
+        setPreview('');
+        throw err;
+      }
+    });
   }
   async function live() {
     await task.run(async () => {
-      const { data: challenge } = await api.post('/liveness/challenge', { session_id: Number(id) }); setPrompt(challenge);
-      setPhase('Get ready: follow the challenge below. Capture starts in 2 seconds.');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      const frames = await captureBurst(camera.current, n => setPhase(`Capturing frame ${n} of 8 — perform the challenge now`));
-      const body = new FormData(); frames.forEach((f, i) => body.append('frames', f, `frame-${i}.jpg`)); body.append('challenge_token', challenge.token); body.append('volunteers_confirmed', consent); body.append('debug', debug);
-      setPreview(URL.createObjectURL(frames.at(-1))); setPhase('Processing eight frames on CPU. Voting and checking liveness…');
-      const { data } = await api.post(`/sessions/${id}/capture-frames`, body); setResult(data); setPrompt(null); await load();
+      try {
+        const { data: challenge } = await api.post('/liveness/challenge', { session_id: Number(id) }); setPrompt(challenge);
+        setPhase('Get ready: follow the challenge below. Capture starts in 2 seconds.');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const frames = await captureBurst(camera.current, n => setPhase(`Capturing frame ${n} of 8 — perform the challenge now`), { prompt: challenge.prompt, count: 8 });
+        const body = new FormData(); frames.forEach((f, i) => body.append('frames', f, `frame-${i}.jpg`)); body.append('challenge_token', challenge.token); body.append('volunteers_confirmed', consent); body.append('debug', debug);
+        setPreviewFrame(frames.length - 1);
+        setPreview(URL.createObjectURL(frames[frames.length - 1]));
+        setPhase('Processing eight frames on CPU. Voting and checking liveness…');
+        const { data } = await api.post(`/sessions/${id}/capture-frames`, body);
+        setResult(data);
+        setPrompt(null);
+        await load();
+      } catch (err) {
+        setResult(null);
+        setPreview('');
+        setPrompt(null);
+        throw err;
+      }
     });
   }
-  const lastFrame = Math.max(0, ...(result?.boxes.map(b => b.frame) || [0]));
-  return <><Heading title={`Session #${id}`} detail={session ? `${session.status.toUpperCase()}${session.is_demo ? ' · DEMO DATA' : ''} · ${new Date(session.starts_at).toLocaleString()}` : 'Loading…'}>{session?.status === 'open' && <button className="btn secondary" disabled={task.busy} onClick={() => { if (window.confirm('Close session? Students without a present record will become absent.')) task.run(async () => { await api.post(`/sessions/${id}/close`); await load(); }); }}>Close session</button>}</Heading><ErrorBox error={task.error}/><nav className="flex flex-wrap gap-2">{['capture', 'review', 'records', 'reports', 'audit'].map(t => <button key={t} className={`btn ${tab === t ? '' : 'secondary'}`} onClick={() => setTab(t)}>{t}{t === 'review' ? ` (${reviews.filter(r => r.status === 'pending').length})` : ''}</button>)}</nav>
+  const displayedBoxes = result?.boxes.filter(b => b.frame === previewFrame) || [];
+  return <><div className="flex flex-wrap items-center justify-between gap-3"><Heading title={`Session #${id}`} detail={session ? `${session.status.toUpperCase()}${session.is_demo ? ' · DEMO DATA' : ''} · ${new Date(session.starts_at).toLocaleString()}` : 'Loading…'}>{session?.status === 'open' && <button className="btn secondary" disabled={task.busy} onClick={() => { if (window.confirm('Close session? Students without a present record will become absent.')) task.run(async () => { await api.post(`/sessions/${id}/close`); await load(); }); }}>Close session</button>}</Heading>{livenessStatus && <div className="text-xs font-medium px-3 py-1.5 rounded-full border bg-slate-50 text-slate-700 border-slate-200">Liveness: <span className="font-semibold text-emerald-700">{livenessStatus.active_backend.toUpperCase()}</span>{livenessStatus.active_backend === 'baseline' && !livenessStatus.baseline_auto && ' (Review Mode)'}</div>}</div><ErrorBox error={task.error}/><nav className="flex flex-wrap gap-2">{['capture', 'review', 'records', 'reports', 'audit'].map(t => <button key={t} className={`btn ${tab === t ? '' : 'secondary'}`} onClick={() => setTab(t)}>{t}{t === 'review' ? ` (${reviews.filter(r => r.status === 'pending').length})` : ''}</button>)}</nav>
     {tab === 'capture' && <>
       {session?.require_qr ? (
         <section className="card space-y-3">
@@ -67,12 +93,12 @@ export default function SessionDetail() {
             <span>QR Code Check-in Not Enabled For This Session</span>
           </div>
           <p className="muted text-xs leading-relaxed">
-            This session was configured for photo/video capture. To display the rotating 30-second QR Code (Barcode), tick <strong>"Require QR + face check-in"</strong> when creating a session, or visit <a href="/sessions/21" className="text-emerald-700 underline font-semibold">Session #21</a> which has QR Code enabled.
+            This session was configured for photo/video capture. To use rotating 30-second QR check-in, tick <strong>"Require QR + face check-in"</strong> when creating a session, or visit the <a href="/sessions" className="text-emerald-700 underline font-semibold">Sessions list</a> to select a QR-enabled session.
           </p>
         </section>
       )}
     <div className="grid gap-4 lg:grid-cols-2"><section className="card space-y-4">{cameraOn ? <Webcam ref={camera}/> : <button className="btn" onClick={() => setCameraOn(true)}>Enable camera</button>}<label className="flex items-start gap-2"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/>Every pictured volunteer has consented to this capture and temporary review storage.</label>{session?.debug_available && <label className="flex items-center gap-2"><input type="checkbox" checked={debug} onChange={e => setDebug(e.target.checked)}/>Teacher debug: show similarity scores and margins</label>}<button className="btn" disabled={!cameraOn || !consent || task.busy || session?.status !== 'open'} onClick={live}>Start live challenge + capture</button>{prompt && <p className="rounded-xl bg-amber-100 p-4 font-semibold" role="alert">{prompt.instructions}</p>}</section><section className="card space-y-4"><h2>Classroom photograph</h2><p className="muted">JPEG, PNG or WEBP · max 8 MB · max 16 megapixels. Small faces and uncertain matches go to review.</p><input aria-label="Classroom photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setFile(e.target.files[0])}/><button className="btn" disabled={!file || !consent || task.busy || session?.status !== 'open'} onClick={submitPhoto}>Process photograph</button><Progress busy={task.busy} label={phase}/>{result && <p className="text-sm">{result.faces_detected} detections · {result.accepted.length} accepted students · {result.review_ids.length} review items · {(result.elapsed_ms / 1000).toFixed(2)} seconds</p>}</section></div>
-    {preview && result && <section className="card space-y-3"><h2>Capture results</h2><div className="relative inline-block w-full"><img className="w-full" src={preview} alt="Current capture, held only in this browser tab"/>{result.boxes.filter(b => b.frame === lastFrame).map((b, i) => <div key={i} className={`absolute border-2 ${b.decision === 'auto' ? 'border-emerald-400' : 'border-amber-400'}`} style={{ left: `${100 * b.box[0] / b.width}%`, top: `${100 * b.box[1] / b.height}%`, width: `${100 * (b.box[2] - b.box[0]) / b.width}%`, height: `${100 * (b.box[3] - b.box[1]) / b.height}%` }}><span className="absolute left-0 top-0 bg-black/75 px-1 text-[10px] text-white">{b.decision}{b.score != null ? ` ${b.score.toFixed(3)}` : ''}</span></div>)}</div><button className="btn secondary" onClick={() => { setPreview(''); setResult(null); }}>Clear local preview</button><div className="flex flex-wrap gap-2">{result.accepted.map(a => <span className="badge" key={a.student_id}>{a.name} · {a.votes} vote(s)</span>)}</div></section>}</>}
+    {preview && result && <section className="card space-y-3"><h2>Capture results (Preview Frame {previewFrame + 1})</h2><div className="relative inline-block w-full"><img className="w-full" src={preview} alt="Current capture, held only in this browser tab"/>{displayedBoxes.map((b, i) => <div key={i} className={`absolute border-2 ${b.decision === 'auto' ? 'border-emerald-400' : 'border-amber-400'}`} style={{ left: `${100 * b.box[0] / b.width}%`, top: `${100 * b.box[1] / b.height}%`, width: `${100 * (b.box[2] - b.box[0]) / b.width}%`, height: `${100 * (b.box[3] - b.box[1]) / b.height}%` }}><span className="absolute left-0 top-0 bg-black/75 px-1 text-[10px] text-white">{b.decision}{b.score != null ? ` ${b.score.toFixed(3)}` : ''}</span></div>)}{displayedBoxes.length === 0 && <div className="absolute inset-0 grid place-items-center bg-black/30 text-white text-xs font-semibold">No faces detected in preview frame</div>}</div><button className="btn secondary" onClick={() => { setPreview(''); setResult(null); }}>Clear local preview</button><div className="flex flex-wrap gap-2">{result.accepted.map(a => <span className="badge" key={a.student_id}>{a.name} · {a.votes} vote(s)</span>)}</div></section>}</>}
     {tab === 'review' && <div className="grid gap-4 lg:grid-cols-2">{reviews.map(r => <ReviewCard item={r} roster={roster} key={r.id} busy={task.busy} resolve={(key, body) => task.run(async () => { await api.post(`/review/${key}/resolve`, body); await load(); })}/>)}{!reviews.length && <Empty>No review items.</Empty>}</div>}
     {tab === 'records' && <section className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Student</th><th>Status</th><th>Source</th><th>Action</th></tr></thead><tbody>{records.map(r => <tr key={r.id}><td>{r.name}</td><td><span className="badge">{r.status}</span></td><td>{r.source}</td><td><button className="btn secondary" onClick={() => setEditing({ ...r, reason: '' })}>Correct</button></td></tr>)}</tbody></table>{!records.length && <p className="muted py-6">No attendance records yet.</p>}</section>}
     {editing && <div role="dialog" aria-modal="true" aria-label="Correct attendance" className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5"><form className="card w-full max-w-md space-y-4" onSubmit={e => { e.preventDefault(); task.run(async () => { await api.put(`/attendance/${editing.id}`, { status: editing.status, reason: editing.reason }); setEditing(null); await load(); }); }}><h2>Correct {editing.name}</h2><ErrorBox error={task.error}/><select aria-label="Status" value={editing.status} onChange={e => setEditing({ ...editing, status: e.target.value })}><option>present</option><option>absent</option></select><Field title="Reason (required)"><textarea required minLength={3} maxLength={500} value={editing.reason} onChange={e => setEditing({ ...editing, reason: e.target.value })}/></Field><div className="flex gap-2"><button className="btn" disabled={task.busy}>Save correction</button><button className="btn secondary" type="button" onClick={() => setEditing(null)}>Cancel</button></div></form></div>}

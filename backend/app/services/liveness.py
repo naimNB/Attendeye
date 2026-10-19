@@ -28,6 +28,8 @@ class LivenessChecker(Protocol):
 
 class BaselineChecker:
     """Uncalibrated texture/moire heuristic, never advertised as a security model."""
+    backend_name: str = "baseline"
+
     def check(self, image: np.ndarray, face: Face) -> LivenessResult:
         if min(face.crop.shape[:2]) < settings.passive_min_size:
             return LivenessResult(False, 0., "liveness_not_checked", "baseline")
@@ -55,6 +57,8 @@ def expanded_crop(image: np.ndarray, box: np.ndarray, scale: float) -> np.ndarra
 
 
 class MiniFASChecker:
+    backend_name: str = "minifasnet"
+
     def __init__(self, path: str) -> None:
         import onnxruntime as ort
         self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
@@ -90,6 +94,19 @@ def get_liveness_checker() -> LivenessChecker:
     else:
         log.warning("MiniFASNet missing; active backend: baseline (auto-accept=%s)", settings.baseline_auto)
     return BaselineChecker()
+
+
+def get_liveness_status() -> dict:
+    checker = get_liveness_checker()
+    backend = getattr(checker, "backend_name", "baseline")
+    has_model = Path(settings.minifas_path).is_file()
+    return {
+        "ready": True,
+        "active_backend": backend,
+        "minifas_available": has_model,
+        "baseline_auto": settings.baseline_auto,
+        "passive_min_size": settings.passive_min_size,
+    }
 
 
 def eye_aspect_ratio(points: np.ndarray) -> float:

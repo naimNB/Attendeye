@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { Webcam, captureBurst } from '../components/Webcam';
 import { QRScanner } from '../components/QRScanner';
@@ -6,8 +6,38 @@ import { Heading, Field, ErrorBox, useTask, Progress } from '../components/UI';
 
 export default function Checkin() {
   const camera = useRef(), task = useTask();
-  const [sessionId, setSessionId] = useState(''), [code, setCode] = useState(''), [scan, setScan] = useState(false), [cameraOn, setCameraOn] = useState(false), [prompt, setPrompt] = useState(''), [phase, setPhase] = useState(''), [success, setSuccess] = useState(false);
-  
+  const [sessionId, setSessionId] = useState('');
+  const [code, setCode] = useState('');
+  const [scan, setScan] = useState(false);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [phase, setPhase] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [ticketTimeLeft, setTicketTimeLeft] = useState(null);
+  const [livenessStatus, setLivenessStatus] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    api.get('/liveness/status').then(r => {
+      if (active) setLivenessStatus(r.data);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (ticketTimeLeft === null || ticketTimeLeft <= 0) return;
+    const timer = setInterval(() => {
+      setTicketTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [ticketTimeLeft]);
+
   function parse(raw) {
     try {
       const value = JSON.parse(raw);
@@ -21,27 +51,56 @@ export default function Checkin() {
   async function checkin() {
     await task.run(async () => {
       setSuccess(false);
-      const { data } = await api.post('/liveness/challenge', { session_id: Number(sessionId) });
-      setPrompt(data.instructions);
-      setPhase('Get ready. Capture begins in 2 seconds.');
+      setPhase('Validating QR code and reserving check-in ticket…');
+      // Step 1: Start check-in: validate raw QR immediately in its current window
+      const { data: ticketData } = await api.post('/checkin/start', {
+        session_id: Number(sessionId),
+        qr_token: code,
+        mode: 'random'
+      });
+
+      setTicketTimeLeft(ticketData.expires_in || 15);
+      setPrompt(ticketData.instructions);
+
+      // Step 2: Preparation countdown
+      setPhase('Get ready: face the camera. Capture starts in 2 seconds…');
       await new Promise(resolve => setTimeout(resolve, 2000));
-      const frames = await captureBurst(camera.current, n => setPhase(`Capturing ${n}/8. Follow the prompt.`));
+
+      // Step 3: Capture burst appropriate for challenge prompt
+      const frames = await captureBurst(
+        camera.current,
+        (n, total) => setPhase(`Capturing frame ${n}/${total} — ${ticketData.instructions}`),
+        { prompt: ticketData.prompt, count: 8 }
+      );
+
+      // Step 4: Complete check-in with ticket and frames
+      setPhase('Verifying identity, liveness motion and security ticket…');
       const body = new FormData();
-      body.append('qr_token', code);
-      body.append('challenge_token', data.token);
+      body.append('ticket_token', ticketData.ticket_token);
+      body.append('challenge_token', ticketData.challenge_token);
       frames.forEach((f, i) => body.append('frames', f, `frame-${i}.jpg`));
-      setPhase('Verifying QR, face and liveness…');
+
       await api.post(`/checkin/${sessionId}`, body);
       setSuccess(true);
       setCameraOn(false);
       setCode('');
       setPrompt('');
+      setTicketTimeLeft(null);
     });
   }
 
   return (
     <>
-      <Heading title="QR + face check-in" detail="Use the current classroom code, then complete your live face challenge."/>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Heading title="QR + face check-in" detail="Scan the current classroom code, then complete your live face challenge."/>
+        {livenessStatus && (
+          <div className="text-xs font-medium px-3 py-1.5 rounded-full border bg-slate-50 text-slate-700 border-slate-200">
+            Liveness: <span className="font-semibold text-emerald-700">{livenessStatus.active_backend.toUpperCase()}</span>
+            {livenessStatus.active_backend === 'baseline' && !livenessStatus.baseline_auto && ' (Review Mode)'}
+          </div>
+        )}
+      </div>
+
       <ErrorBox error={task.error}/>
       {success && <p className="rounded-xl bg-mint p-4 font-semibold text-emerald-950">Checked in successfully. You are marked present.</p>}
       
@@ -75,8 +134,24 @@ export default function Checkin() {
       </section>
 
       <section className="card space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">2. Live Face Challenge</h2>
+          {ticketTimeLeft !== null && (
+            <span className={`text-xs font-mono font-semibold px-2 py-1 rounded ${ticketTimeLeft <= 5 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}`}>
+              Ticket expires in: {ticketTimeLeft}s
+            </span>
+          )}
+        </div>
+
         {cameraOn ? <Webcam ref={camera}/> : <button className="btn" onClick={() => setCameraOn(true)}>Enable face camera</button>}
-        {prompt && <p role="alert" className="rounded-xl bg-amber-100 p-4 font-semibold text-amber-950">{prompt}</p>}
+        
+        {prompt && (
+          <div role="alert" className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-amber-950 space-y-1">
+            <p className="font-bold text-sm">Challenge Instruction:</p>
+            <p className="text-sm font-semibold">{prompt}</p>
+          </div>
+        )}
+
         <button className="btn" disabled={task.busy || !cameraOn || !sessionId || !code} onClick={checkin}>
           Start challenge and check in
         </button>

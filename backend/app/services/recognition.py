@@ -14,6 +14,7 @@ from .liveness import get_liveness_checker, validate_motion
 from .matching import Match, match_faces, fuse_frames
 from .attendance import get_settings, set_record
 from .privacy import save_thumbnail
+from .locks import mutation_lock
 
 log = logging.getLogger(__name__)
 
@@ -63,15 +64,33 @@ def capture(db: Session, session: ClassSession, images: list[bytes], prompt: str
     limits = get_settings(db)
     observations = [analyse(data, gallery, limits) for data in images]
     if prompt is not None:
+        # Separate temporal identity association, motion evidence, and voting eligibility
         tracks = {}
-        for observation in observations:
+        for frame_idx, observation in enumerate(observations):
             for face, match in zip(observation.faces, observation.matches):
-                if match.student_id is not None:
-                    tracks.setdefault(match.student_id, []).append(face)
-        passing = {sid for sid, faces in tracks.items() if len(faces) == len(images) and validate_motion(faces, prompt)}
+                assoc_id = match.student_id if match.student_id is not None else match.candidate_id
+                if assoc_id is not None:
+                    tracks.setdefault(assoc_id, []).append((frame_idx, face, match))
+        passing = set()
+        for sid, entries in tracks.items():
+            # Check for intra-frame duplicates / identity conflicts
+            frame_indices = [e[0] for e in entries]
+            if len(frame_indices) != len(set(frame_indices)):
+                continue
+            # Maintain identity continuity across the track and reject identity swaps
+            ordered_faces = [e[1] for e in entries]
+            if len(ordered_faces) < 5:
+                continue
+            ref_vec = ordered_faces[0].vector
+            if any(float(ref_vec @ f.vector) < .40 for f in ordered_faces[1:]):
+                continue
+            # Validate ordered motion evidence server-side
+            if validate_motion(ordered_faces, prompt):
+                passing.add(sid)
         for observation in observations:
             for match in observation.matches:
-                if match.reason == "auto" and match.student_id not in passing:
+                assoc_id = match.student_id if match.student_id is not None else match.candidate_id
+                if match.reason == "auto" and (assoc_id is None or assoc_id not in passing):
                     match.reason = "active_challenge_fail"
     if session.require_qr:
         for observation in observations:
@@ -82,31 +101,40 @@ def capture(db: Session, session: ClassSession, images: list[bytes], prompt: str
     else:
         accepted = {m.student_id: {"confidence": m.score, "votes": 1}
                     for m in observations[0].matches if m.reason == "auto"}
-    for student_id, value in accepted.items():
-        set_record(db, session.id, student_id, confidence=value["confidence"])
-    reviews, boxes, seen = [], [], set()
-    names = {sid: db.get(User, sid).name for sid in gallery}
-    for frame_index, observation in enumerate(observations):
-        for face, match in zip(observation.faces, observation.matches):
-            reason = match.reason
-            if match.reason == "auto" and match.student_id not in accepted:
-                reason = "insufficient_votes"
-            box = {"frame": frame_index, "box": face.box.tolist(), "decision": reason,
-                   "student_id": match.student_id if reason == "auto" else None,
-                   "width": observation.width, "height": observation.height}
-            if debug:
-                box.update(score=match.score, margin=match.margin)
-            boxes.append(box)
-            if reason != "auto":
-                # Identity-associated reviews are consolidated across a burst.
-                key = (match.student_id, reason) if match.student_id is not None else (frame_index, match.face_index)
-                if key in seen: continue
-                seen.add(key)
-                candidates = [{**c, "name": names.get(c["student_id"], "Student")} for c in match.candidates]
-                item = ReviewItem(session_id=session.id, thumbnail_path=save_thumbnail(face.crop),
-                                  candidates_json=json.dumps(candidates), reason=reason)
-                db.add(item); db.flush(); reviews.append(item.id)
-    db.commit()
+    with mutation_lock:
+        cur_session = db.get(ClassSession, session.id)
+        if cur_session is None or cur_session.status != "open":
+            raise ValueError("Session is no longer open")
+        cur_gallery = gallery_for(db, session.section_id)
+        valid_students = set(cur_gallery.keys())
+
+        for student_id, value in accepted.items():
+            if student_id in valid_students:
+                set_record(db, session.id, student_id, confidence=value["confidence"])
+
+        reviews, boxes, seen = [], [], set()
+        names = {sid: db.get(User, sid).name for sid in gallery}
+        for frame_index, observation in enumerate(observations):
+            for face, match in zip(observation.faces, observation.matches):
+                reason = match.reason
+                if match.reason == "auto" and match.student_id not in accepted:
+                    reason = "insufficient_votes"
+                box = {"frame": frame_index, "box": face.box.tolist(), "decision": reason,
+                       "student_id": match.student_id if reason == "auto" else None,
+                       "width": observation.width, "height": observation.height}
+                if debug:
+                    box.update(score=match.score, margin=match.margin)
+                boxes.append(box)
+                if reason != "auto":
+                    # Identity-associated reviews are consolidated across a burst.
+                    key = (match.student_id, reason) if match.student_id is not None else (frame_index, match.face_index)
+                    if key in seen: continue
+                    seen.add(key)
+                    candidates = [{**c, "name": names.get(c["student_id"], "Student")} for c in match.candidates]
+                    item = ReviewItem(session_id=session.id, thumbnail_path=save_thumbnail(face.crop),
+                                      candidates_json=json.dumps(candidates), reason=reason)
+                    db.add(item); db.flush(); reviews.append(item.id)
+        db.commit()
     elapsed = round((time.perf_counter() - started) * 1000, 1)
     log.info("Capture complete: frames=%d elapsed_ms=%.1f", len(images), elapsed)
     return {"accepted": [{"student_id": sid, "name": names[sid], **value} for sid, value in accepted.items()],

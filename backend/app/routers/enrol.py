@@ -43,11 +43,37 @@ def status(db: DB, student: Student) -> dict:
 
 @router.post("/sample")
 def sample(db: DB, student: Student, image: UploadFile = File(...), pose: str = Form(...)) -> dict:
+    if pose not in POSES:
+        raise HTTPException(422, "Pose must be front, left, right, up or down")
+    if not active_consent(db, student.id):
+        raise HTTPException(409, "Explicit consent is required first")
+
+    # Perform image decoding and neural detection outside global mutation lock
+    frame = decode_image(read_image(image))
+    faces = get_face_engine().detect(frame)
+    if len(faces) != 1:
+        raise HTTPException(422, "Exactly one face is required")
+    face = faces[0]
+    if face.quality_reasons:
+        raise HTTPException(422, ", ".join(face.quality_reasons))
+
+    # Signed orientation gates:
+    # Yaw: positive = turn left, negative = turn right (matches validate_motion)
+    # Pitch: negative = tilt up, positive = tilt down
+    if pose == "front" and (abs(face.yaw) > 15 or abs(face.pitch) > 15):
+        raise HTTPException(422, "Look straight at the camera")
+    if pose == "left" and face.yaw < 10:
+        raise HTTPException(422, "Turn your head to the left")
+    if pose == "right" and face.yaw > -10:
+        raise HTTPException(422, "Turn your head to the right")
+    if pose == "up" and face.pitch > -8:
+        raise HTTPException(422, "Tilt your head slightly upwards")
+    if pose == "down" and face.pitch < 8:
+        raise HTTPException(422, "Tilt your head slightly downwards")
+
     with mutation_lock:
         if not active_consent(db, student.id):
             raise HTTPException(409, "Explicit consent is required first")
-        if pose not in POSES:
-            raise HTTPException(422, "Pose must be front, left, right, up or down")
         rows = list(db.scalars(select(FaceEmbedding).where(FaceEmbedding.student_id == student.id)))
         if len(rows) >= 10:
             raise HTTPException(409, "Maximum 10 samples. Delete biometric data to restart.")
@@ -58,20 +84,6 @@ def sample(db: DB, student: Student, image: UploadFile = File(...), pose: str = 
             model_setting.value = settings.face_model
         elif model_setting is None:
             db.add(Setting(key="embedding_model", value=settings.face_model))
-        frame = decode_image(read_image(image))
-        faces = get_face_engine().detect(frame)
-        if len(faces) != 1:
-            raise HTTPException(422, "Exactly one face is required")
-        face = faces[0]
-        if face.quality_reasons:
-            raise HTTPException(422, ", ".join(face.quality_reasons))
-        # Loose orientation gates: labels are guidance, not a precision pose instrument.
-        if pose == "front" and (abs(face.yaw) > 15 or abs(face.pitch) > 15):
-            raise HTTPException(422, "Look straight at the camera")
-        if pose in {"left", "right"} and abs(face.yaw) < 10:
-            raise HTTPException(422, "Turn slightly to the requested side")
-        if pose in {"up", "down"} and abs(face.pitch) < 8:
-            raise HTTPException(422, "Tilt slightly in the requested direction")
         from ..security import decrypt_vector
         if rows and max(float(face.vector @ decrypt_vector(r.vector_encrypted)) for r in rows) < .35:
             raise HTTPException(422, "Sample does not match earlier samples; retry with better light")

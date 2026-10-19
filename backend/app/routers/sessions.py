@@ -63,8 +63,11 @@ def do_capture(session_id: int, db: DB, teacher: Teacher, images: list[UploadFil
             if debug and (not settings.debug or teacher.role != "teacher"):
                 raise HTTPException(403, "Teacher debug view is disabled")
             prompt = consume(db, signed, teacher.id, session_id) if signed else None
-            blobs = [read_image(file) for file in images]
+        blobs = [read_image(file) for file in images]
+        try:
             return capture(db, row, blobs, prompt, debug)
+        except ValueError as err:
+            raise HTTPException(409, str(err))
     finally:
         processing_slots.release()
 

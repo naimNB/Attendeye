@@ -148,3 +148,15 @@ class QRRedemption(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("class_sessions.id"), primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     redeemed_at: Mapped[datetime] = mapped_column(default=now)
+
+
+class CheckinTicket(Base):
+    __tablename__ = "checkin_tickets"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("class_sessions.id"), index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    challenge_id: Mapped[str] = mapped_column(ForeignKey("challenges.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=now)
+

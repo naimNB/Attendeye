@@ -44,6 +44,7 @@ class Match:
     margin: float
     reason: str
     candidates: list[dict]
+    candidate_id: int | str | None = None
 
 
 def match_faces(faces: list[np.ndarray], gallery: dict, low: float = .35,
@@ -53,7 +54,7 @@ def match_faces(faces: list[np.ndarray], gallery: dict, low: float = .35,
     live = live if live is not None else [True] * len(faces)
     quality = quality if quality is not None else [True] * len(faces)
     if not ids:
-        return [Match(i, None, -1., 0., "unknown", []) for i in range(len(faces))]
+        return [Match(i, None, -1., 0., "unknown", [], None) for i in range(len(faces))]
     # Dummy columns permit unmatched faces. Low-quality/spoof faces cannot consume a student.
     eligible = np.asarray(live) & np.asarray(quality)
     benefits = matrix.astype(float) - low
@@ -74,7 +75,8 @@ def match_faces(faces: list[np.ndarray], gallery: dict, low: float = .35,
         reason = decision(score, margin, low, high, min_margin, live[i], quality[i])
         if reason == "auto" and not real:
             reason = "assignment_conflict"
-        results.append(Match(i, ids[chosen] if real else None, score, margin, reason, candidates))
+        top_cand_id = ids[int(order[0])] if (len(ids) and float(row[order[0]]) >= low) else None
+        results.append(Match(i, ids[chosen] if real else None, score, margin, reason, candidates, top_cand_id))
     return results
 
 

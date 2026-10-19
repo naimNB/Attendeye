@@ -93,15 +93,16 @@ class FaceEngine:
                 for y in ys:
                     for x in xs:
                         scan(image[y:y + settings.tile_size, x:x + settings.tile_size], x, y)
-            sizes = [min(box[2] - box[0], box[3] - box[1]) for _, box, _ in detections]
-            if settings.upscale and (not sizes or min(sizes) < settings.min_face_size * 1.5):
-                # Upscale tiles rather than an unlimited full-resolution canvas.
+            # Only run expensive 2x upscale pass if no faces were detected at native scale
+            if settings.upscale and not detections:
                 tile = settings.tile_size
                 step = max(1, int(tile * (1 - settings.tile_overlap)))
                 for y in range(0, height, step):
                     for x in range(0, width, step):
                         patch = image[y:y + tile, x:x + tile]
-                        scan(cv2.resize(patch, None, fx=2, fy=2), x, y, 2.)
+                        if patch.size > 0:
+                            scan(cv2.resize(patch, None, fx=2, fy=2), x, y, 2.)
+        t_detect = (time.perf_counter() - started) * 1000
         keep = nms([d[1] for d in detections], [float(d[0].det_score) for d in detections])
         results = []
         for index in keep:
@@ -128,7 +129,9 @@ class FaceEngine:
                 reasons.append("extreme_pose")
             results.append(Face(box, normalize(raw.embedding), landmarks, yaw, pitch,
                                 crop, float(raw.det_score), reasons))
-        log.info("Detection finished: faces=%d elapsed_ms=%.1f", len(results), (time.perf_counter() - started) * 1000)
+        total_ms = (time.perf_counter() - started) * 1000
+        log.info("FaceEngine: detection_ms=%.1f total_ms=%.1f candidates=%d kept_faces=%d",
+                 t_detect, total_ms, len(detections), len(results))
         return results
 
 

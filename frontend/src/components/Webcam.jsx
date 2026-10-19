@@ -14,8 +14,8 @@ export const Webcam = forwardRef(function Webcam({ facingMode = 'user' }, ref) {
         const videoInputs = all.filter(d => d.kind === 'videoinput');
         setDevices(videoInputs);
         if (videoInputs.length > 0 && !selectedDeviceId) {
-          const preferred = videoInputs.find(d => /droidcam|virtual/i.test(d.label)) || videoInputs[0];
-          setSelectedDeviceId(preferred.deviceId);
+          // Let users select a camera; do not automatically prefer a virtual camera
+          setSelectedDeviceId(videoInputs[0].deviceId);
         }
       } catch (_) {}
     }
@@ -25,10 +25,13 @@ export const Webcam = forwardRef(function Webcam({ facingMode = 'user' }, ref) {
   useEffect(() => {
     let cancelled = false;
     async function start() {
+      setReady(false);
+      setError('');
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera needs localhost or an HTTPS secure origin.');
         if (stream.current) {
           stream.current.getTracks().forEach(t => t.stop());
+          stream.current = null;
         }
         const videoConstraints = selectedDeviceId
           ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -41,17 +44,28 @@ export const Webcam = forwardRef(function Webcam({ facingMode = 'user' }, ref) {
           video.current.srcObject = media;
           await video.current.play();
         }
-        setReady(true);
+        if (!cancelled) setReady(true);
 
         const all = await navigator.mediaDevices.enumerateDevices();
-        const videoInputs = all.filter(d => d.kind === 'videoinput');
-        setDevices(videoInputs);
+        if (!cancelled) {
+          const videoInputs = all.filter(d => d.kind === 'videoinput');
+          setDevices(videoInputs);
+        }
       } catch (e) {
-        if (!cancelled) setError(e.message);
+        if (!cancelled) {
+          setReady(false);
+          setError(e.message || 'Camera error');
+        }
       }
     }
     start();
-    return () => { cancelled = true; stream.current?.getTracks().forEach(t => t.stop()); };
+    return () => {
+      cancelled = true;
+      if (stream.current) {
+        stream.current.getTracks().forEach(t => t.stop());
+        stream.current = null;
+      }
+    };
   }, [facingMode, selectedDeviceId]);
 
   async function capture() {
@@ -88,8 +102,25 @@ export const Webcam = forwardRef(function Webcam({ facingMode = 'user' }, ref) {
     </div>
   );
 });
-export async function captureBurst(camera, onProgress) {
+
+export async function captureBurst(camera, onProgress, options = {}) {
+  const count = typeof options === 'number' ? options : (options?.count || 8);
+  const prompt = typeof options === 'object' ? options?.prompt : undefined;
+  // Appropriate sampling intervals:
+  // Human blinks last ~150-350ms, so ~160ms interval samples rapidly enough to catch the closed-eye state.
+  // Head turns need ~320ms so user has time to execute the turn smoothly.
+  let defaultInterval = 250;
+  if (prompt === 'blink') defaultInterval = 160;
+  else if (prompt === 'turn_left' || prompt === 'turn_right') defaultInterval = 320;
+  const interval = (typeof options === 'object' && options?.interval !== undefined) ? options.interval : defaultInterval;
+
   const frames = [];
-  for (let i = 0; i < 8; i++) { onProgress?.(i + 1); frames.push(await camera.capture()); if (i < 7) await new Promise(resolve => setTimeout(resolve, 430)); }
+  for (let i = 0; i < count; i++) {
+    onProgress?.(i + 1, count);
+    frames.push(await camera.capture());
+    if (i < count - 1 && interval > 0) {
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+  }
   return frames;
 }

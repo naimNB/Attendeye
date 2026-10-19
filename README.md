@@ -171,15 +171,15 @@ For actual volunteers, create new accounts and separate real courses/sections. A
 
 `download_minifas.py` retrieves the official Silent-Face-Anti-Spoofing MiniFASNetV2 architecture/checkpoint at a resolved commit and exports ONNX. It writes a provenance/checksum manifest and upstream licence alongside the model. You can supply `--revision` with a full official commit SHA to reproduce the same source revision. This is one model, **not** the upstream two-model ensemble. It uses BGR float32 input in 0–255, NCHW 80×80, live class 1 and a 2.7-expanded crop.
 
-If export/model loading fails, the app logs that it is using the texture/moire baseline. With `BASELINE_AUTO_ACCEPT=false` (default), the baseline sends observations to review and **will not complete automatic QR check-in**. Keep this setting for conservative behaviour. Installing/calibrating MiniFASNet is needed for the stronger automatic path. Setting the baseline flag true is a deliberate weak experimental mode, not an equivalent anti-spoof guarantee.
+If export/model loading fails, the app logs that it is using the texture/moire baseline. With `BASELINE_AUTO_ACCEPT=false` (default), the baseline sends observations to review and **will not complete automatic QR check-in**. The backend provides an authenticated `GET /liveness/status` endpoint and UI status badges indicating whether `minifas` or `baseline` is currently active. Installing/calibrating MiniFASNet is needed for the stronger automatic path. Setting the baseline flag true is a deliberate weak experimental mode, not an equivalent anti-spoof guarantee.
 
-For large group photos, faces smaller than `PASSIVE_MIN_SIZE` are marked `liveness_not_checked` and cannot auto-present. Live captures require an ordered random blink or head-turn challenge plus at least two eligible agreeing votes. Sparse blink frames, pose sign, camera orientation and model domain shift need hands-on calibration. Challenge expiry is checked when submitted/claimed, before expensive inference; a valid admitted request may finish after the expiry time.
+For large group photos, faces smaller than `PASSIVE_MIN_SIZE` are marked `liveness_not_checked` and cannot auto-present. Live captures require an ordered random blink or head-turn challenge plus at least two eligible agreeing votes. Burst frame intervals are adaptive (~160 ms for fast blink motions, ~320 ms for head turns). Sparse blink frames, pose sign, camera orientation and model domain shift need hands-on calibration. Challenge expiry is checked when submitted/claimed, before expensive inference; a valid admitted request may finish after the expiry time.
 
 ## Main workflow
 
 1. Admin creates courses, sections, users, teacher assignments and enrolments. The admin page supports creation, updates and safe deletes.
 2. Student reads and ticks the consent notice. The timestamp and version are saved.
-3. Student captures one sample per front/left/right/up/down pose; five to ten samples are allowed. One-face, blur, light, size, pose and identity-consistency checks reject unsuitable samples. All five pose labels are required for gallery eligibility.
+3. Student captures one sample per front/left/right/up/down pose; five to ten samples are allowed. One-face, blur, light, size, signed pose gates (verifying direction of turn/tilt), and identity-consistency checks reject unsuitable samples. All five pose labels are required for gallery eligibility. To prevent proxy enrolment, a teacher or staff member should supervise the student's initial enrolment.
 4. Teacher creates an open session with timezone-aware start/end times. The UI sends UTC and displays local time. Sessions last at most twelve hours.
 5. Teacher affirms every pictured person's consent, then uploads a photo or starts an eight-frame live challenge. Processing is in a worker thread; UI capture counts and an indeterminate processing indicator stay responsive.
 6. Review uncertain faces. Confirm/select/reject with a reason. Crops expire and are deleted on resolution; unresolved reviews remain without the expired crop.
@@ -190,9 +190,15 @@ A teacher-only debug checkbox appears when `DEBUG_RECOGNITION=true`; default is 
 
 ## Optional phone QR + face
 
-Create a session with “Require QR + face check-in.” The teacher screen shows a signed code refreshed every thirty-second window. Students use the QR check-in page to scan with a browser BarcodeDetector where supported, or paste the token and enter the session ID. They then complete the face challenge. Exactly one face must appear in each frame and match the signed-in student. The QR/session, one-time challenge, passive decision and multi-frame identity votes all must pass.
+Create a session with “Require QR + face check-in.” The teacher screen displays a rotating signed QR refreshed every 30-second window.
 
-One student/session redemption is enforced by a database key. Current QR tokens can be used by different enrolled students in the same classroom window, but an individual cannot check in twice. A used challenge cannot be retried; request a new one after any failure. Standard teacher photo/review/correction routes do not bypass QR-required presence.
+To prevent submission failures when a student scans near the end of a 30-second window, the system uses a **start-and-complete check-in protocol**:
+1. When the student scans or inputs the raw QR, the frontend immediately calls `POST /checkin/start`.
+2. The server verifies the raw QR against the current 30-second window and issues a short-lived (15-second) signed `checkin_ticket` bound to the student, session, challenge, and an ephemeral database nonce.
+3. The student prepares camera and completes the face challenge within the 15-second ticket lifetime (shown with a live countdown timer in the UI).
+4. `POST /checkin/{session_id}` receives the ticket, challenge response, and burst frames. It atomically marks the ticket as used, validates challenge motion, passive liveness, and multi-frame recognition against the student's enrolled gallery.
+
+A ticket reservation alone never marks attendance. One student/session redemption is strictly enforced by unique database constraints. A used or expired ticket/challenge cannot be retried; failure requires requesting a fresh start. Standard teacher photo/review/correction routes do not bypass QR-required presence.
 
 `localhost` on a phone is the phone, not the laptop. Phone getUserMedia requires **HTTPS with a certificate trusted by that phone**. To use an already-provisioned trusted development certificate, copy `frontend/.env.example` to `.env`, set `DEV_HOST=0.0.0.0`, and set the absolute `TLS_CERT_FILE` and `TLS_KEY_FILE` paths. Use the laptop's certificate-covered LAN address and the Vite `/api` proxy; keep the backend on loopback. Limit firewall access to the demo network. QR token relay and camera-frame injection remain possible. For a pure localhost demo, use another browser profile on the laptop instead.
 
@@ -253,13 +259,13 @@ While running, a one-minute cleanup sweep removes expired/resolved encrypted cro
 
 - **InsightFace compile failure:** use Python 3.10/3.11 x64, install C++ tools/headers, preinstall NumPy and Cython, then use the documented no-build-isolation install. Do not install an untrusted unofficial wheel.
 - **No automatic attendance:** inspect quality/liveness review reasons, complete all poses, enrol the student in the correct section, check thresholds and active model. Baseline defaults to review-only.
-- **Enrolment pose rejected:** use a slight turn/tilt, not an extreme angle; correct lighting and distance. Left/right and up/down labels are guided, loosely gated by pose magnitude rather than a calibrated anatomical sign.
+- **Enrolment pose rejected:** use a slight turn/tilt (approx 10–15°), not an extreme angle; correct lighting and distance. Left/right (yaw) and up/down (pitch) checks enforce signed direction in mirror-webcam coordinates (yaw >= +10° for left turn, <= -10° for right turn; pitch <= -8° for tilt up, >= +8° for tilt down). Verify mirroring and orientation on target camera hardware before high-stakes deployment.
 - **Challenge fails:** request a fresh token; start straight/open-eyed, make the requested motion, return to centre/open eyes. All tracked identities must remain consistent; group live motion is conservative.
 - **Session time error:** check local/UTC conversion and current start/end window. Model processing can outlast the window after a valid submission.
-- **Slow CPU:** reduce image resolution, reduce tile count or disable tiling/upscaling after measuring the detection trade-off. Do not invent a latency target.
+- **Slow CPU:** reduce image resolution, reduce tile count or disable tiling/upscaling after measuring the detection trade-off. 2× tile upscaling now only triggers when native detection detects zero faces. Do not invent a latency target.
 - **Photo too large:** resize before upload; limits protect RAM. Eight frames must fit the total request limit.
 - **Cannot delete roster/user:** retained history references it. Use a new section; biometric withdrawal is separate from account deletion.
-- **After refresh I am signed out:** intentional in-memory token storage.
+- **Session token persistence:** Tokens are retained in `sessionStorage` (scoped to browser tab lifetime, surviving page refreshes within the tab, cleared on tab close, logout, or 401 response). Active session validity is checked against `/auth/me` on mount.
 - **Corrupt/unreadable embeddings after key change:** restore the original key from a protected backup or delete/re-enrol. Replacing a key without re-encryption is not rotation.
 - **Phone camera unavailable:** use trusted HTTPS; plain LAN HTTP is insufficient.
 

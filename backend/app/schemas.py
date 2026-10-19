@@ -98,3 +98,10 @@ class Resolution(Input):
 class ChallengeIn(Input):
     session_id: int
     mode: Literal["random", "blink"] = "random"
+
+
+class CheckinStartIn(Input):
+    session_id: int
+    qr_token: str = Field(min_length=10)
+    mode: Literal["random", "blink"] = "random"
+

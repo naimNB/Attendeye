@@ -91,3 +91,40 @@ def test_capture_window_and_debug(db, accounts, client):
     response = client.post(f'/sessions/{row.id}/capture-photo', headers=headers(accounts['teacher']),
                            data={'volunteers_confirmed': 'true'}, files={'image': ('x.jpg', b'bad', 'image/jpeg')})
     assert response.status_code == 409
+
+
+def test_pose_signed_direction_checks(db, accounts, client, monkeypatch):
+    from app.routers import enrol as enrol_module
+    from app.services.face_engine import Face
+    user = accounts['student']
+    client.post('/enrol/consent', headers=headers(user), json={'accepted': True})
+
+    def make_face(yaw=0., pitch=0.):
+        vec = np.ones(512, dtype=np.float32) / np.sqrt(512)
+        return Face(np.array([0, 0, 100, 100]), vec, None, yaw, pitch,
+                    np.zeros((100, 100, 3), dtype=np.uint8), .99, [])
+
+    class DummyEngine:
+        def __init__(self, f): self.f = f
+        def detect(self, img): return [self.f]
+
+    monkeypatch.setattr(enrol_module, 'decode_image', lambda b: np.zeros((100, 100, 3), dtype=np.uint8))
+
+    # Test turn left: expecting yaw >= 10. Opposite yaw (-20) should fail with 422!
+    monkeypatch.setattr(enrol_module, 'get_face_engine', lambda: DummyEngine(make_face(yaw=-20.)))
+    bad_resp = client.post('/enrol/sample', headers=headers(user), data={'pose': 'left'},
+                           files={'image': ('x.jpg', b'dummy', 'image/jpeg')})
+    assert bad_resp.status_code == 422
+
+    # Correct positive yaw (+15) should pass
+    monkeypatch.setattr(enrol_module, 'get_face_engine', lambda: DummyEngine(make_face(yaw=15.)))
+    ok_resp = client.post('/enrol/sample', headers=headers(user), data={'pose': 'left'},
+                          files={'image': ('x.jpg', b'dummy', 'image/jpeg')})
+    assert ok_resp.status_code == 200
+
+    # Test tilt up: expecting pitch <= -8. Downward tilt (+15) should fail with 422!
+    monkeypatch.setattr(enrol_module, 'get_face_engine', lambda: DummyEngine(make_face(pitch=15.)))
+    bad_up = client.post('/enrol/sample', headers=headers(user), data={'pose': 'up'},
+                         files={'image': ('x.jpg', b'dummy', 'image/jpeg')})
+    assert bad_up.status_code == 422
+

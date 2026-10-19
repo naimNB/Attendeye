@@ -14,10 +14,10 @@ PUB AttendEye is a localhost hackathon prototype for consenting volunteers. The 
 | Review face thumbnails (96×96) | Private `.enc` files | Fernet encryption; authenticated assigned teacher/admin route only | Removed on resolution or expiry; periodic sweep each minute while server is running |
 | Candidate IDs and similarity suggestions | Database | Assigned teacher/admin access | Retained with review history, cleared conservatively on biometric withdrawal |
 | Attendance, notifications and correction history | Database | Student sees self; staff sees assigned sections; admin manages all | Team's documented academic record policy; biometric deletion does not erase history |
-| QR redemption and used challenge state | Database | Token purpose, expiry and user/session binding; no image content | Event retention deadline; challenge rows can be pruned administratively offline |
+| QR redemption, CheckinTicket nonce, and used challenge state | Database | Token purpose, 15s expiry for tickets, student/session binding, one-time nonce; no biometric content | Consumed upon checkin completion or pruned on expiry; challenge rows can be pruned administratively offline |
 | Offline evaluation photographs | Separate local evaluation folders | Separately consented, encrypted drive, restricted access | Signed collection-specific deletion date |
 
-Embeddings remain biometric personal data. Encryption is not anonymisation and similarity scores are not probabilities. Review thumbnails include people who may be unknown to the gallery, so the teacher must affirm consent for everyone captured. The software cannot determine consent from a face.
+Embeddings remain biometric personal data. Encryption is not anonymisation and similarity scores are not probabilities. Review thumbnails include people who may be unknown to the gallery, so the teacher must affirm consent for everyone captured. The software cannot determine consent from a face. To prevent proxy enrolment and ensure the face vectors actually belong to the student owning the account, initial five-pose enrolment must be supervised by a teacher or staff member.
 
 ## Secrets and storage
 
@@ -29,7 +29,7 @@ Multipart uploads are kept in memory up to the bounded request limit to avoid te
 
 ## Access and transport
 
-JWTs use HS256, explicit purpose, expiry and a random token ID. Roles come from the current database user, not a client-provided role. The browser retains the access token in memory only; refresh requires signing in. Every data endpoint has authentication and role/section restrictions. The health endpoint and API schema are public operational metadata. No endpoint returns embeddings, encryption keys or password hashes.
+JWTs use HS256, explicit purpose, expiry and a random token ID. Roles come from the current database user, not a client-provided role. The browser retains the access token in `sessionStorage` (scoped to the browser tab lifetime, surviving page refreshes within the tab, cleared on tab close, logout, or 401 response; never persisted to localStorage); active sessions are re-verified with `/auth/me` on reload. Every data endpoint has authentication and role/section restrictions. The health endpoint, liveness status endpoint, and API schema are operational metadata. No endpoint returns embeddings, encryption keys or password hashes.
 
 Staff must be assigned to a section to inspect its sessions, reports, reviews or thumbnails. Admin has institution-wide access. Debug is off by default and, when enabled, restricted to the teacher role. Thumbnails are never mounted as static files and have no public URL. Responses are marked no-store.
 

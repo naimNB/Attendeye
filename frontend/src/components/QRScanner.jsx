@@ -15,7 +15,9 @@ export function QRScanner({ onScan, onError, onClose }) {
         if (!isMounted) return;
         if (devices && devices.length > 0) {
           setCameras(devices);
-          const preferred = devices.find(d => /droidcam|virtual/i.test(d.label)) || devices[0];
+          // For QR code scanning, prefer the rear/environment camera on mobile phones
+          const rear = devices.find(d => /back|rear|environment/i.test(d.label));
+          const preferred = rear || devices[0];
           setSelectedCam(preferred.id);
         } else {
           setErrorMsg('No camera detected on this device.');
