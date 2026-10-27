@@ -29,7 +29,7 @@ def db():
 
 @pytest.fixture
 def accounts(db):
-    users = [User(name=role, email=f"{role}@example.invalid", role=actual, password_hash=hash_password("Testing12345!"))
+    users = [User(name=role, email=f"{role}@example.invalid", role=actual, password_hash=hash_password("Testing12345!"), status="approved")
              for role, actual in [("admin", "admin"), ("teacher", "teacher"), ("outsider", "teacher"), ("student", "student"), ("other", "student")]]
     db.add_all(users); db.flush()
     course = Course(code="TEST", title="Test Course"); db.add(course); db.flush()

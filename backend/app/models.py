@@ -16,9 +16,32 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
     student_code: Mapped[str | None] = mapped_column(String(50), unique=True)
+    staff_id: Mapped[str | None] = mapped_column(String(50), unique=True)
+    department: Mapped[str | None] = mapped_column(String(100))
+    batch: Mapped[str | None] = mapped_column(String(50))
+    rejection_reason: Mapped[str | None] = mapped_column(String(500))
+    verified_method: Mapped[str | None] = mapped_column(String(100))
+    verified_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(default=now)
-    __table_args__ = (CheckConstraint("role IN ('student','teacher','admin')"),)
+    __table_args__ = (
+        CheckConstraint("role IN ('student','teacher','admin')"),
+        CheckConstraint("status IN ('pending','approved','rejected','suspended')"),
+    )
+
+
+class ApplicationAudit(Base):
+    __tablename__ = "application_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(20))
+    verification_method: Mapped[str | None] = mapped_column(String(100))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(default=now)
+    __table_args__ = (CheckConstraint("action IN ('approved','rejected','suspended','reactivated')"),)
 
 
 class Course(Base):

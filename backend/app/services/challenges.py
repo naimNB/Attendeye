@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 from ..models import Challenge, now
-from ..security import token, decode_token
+from ..security import token, decode_token, auth_error
 
 
 def issue(db: Session, user_id: int, session_id: int, mode: str = "random") -> dict:
@@ -26,7 +26,7 @@ def consume(db: Session, signed: str, user_id: int, session_id: int) -> str:
         raise HTTPException(403, "Challenge is bound to another user or session")
     row = db.get(Challenge, data.get("cid", ""))
     if row is None:
-        raise HTTPException(401, "Unknown challenge")
+        raise auth_error(401, "CHALLENGE_NOT_FOUND", "Unknown challenge")
     prompt = row.prompt
     result = db.execute(update(Challenge).where(Challenge.id == row.id, Challenge.used.is_(False),
                                                Challenge.expires_at > now()).values(used=True))

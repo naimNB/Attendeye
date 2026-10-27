@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.formparsers import MultiPartParser
 from sqlalchemy.exc import IntegrityError
 from .config import settings
-from .database import Base, engine, SessionLocal
+from .database import Base, engine, SessionLocal, migrate_schema
 from .routers import auth, admin, enrol, sessions, attendance, checkin, reports, analytics
 from .services.privacy import cleanup
 from .services.locks import mutation_lock
@@ -38,6 +38,7 @@ async def cleanup_loop() -> None:
 async def lifespan(app: FastAPI):
     settings.validate()
     Base.metadata.create_all(engine)
+    migrate_schema(engine)
     settings.private_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     await run_in_threadpool(cleanup_once)
     task = asyncio.create_task(cleanup_loop())

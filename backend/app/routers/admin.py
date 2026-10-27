@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import select, delete, func
 from sqlalchemy.exc import IntegrityError
 from ..deps import DB, Admin, Current, public_user, section_access
-from ..models import User, Course, Section, Enrolment, TeacherAssignment, Setting, ClassSession
-from ..schemas import UserIn, CourseIn, SectionIn, EnrolmentIn, AssignmentIn, SettingsIn
+from ..models import User, Course, Section, Enrolment, TeacherAssignment, Setting, ClassSession, ApplicationAudit, now
+from ..schemas import UserIn, CourseIn, SectionIn, EnrolmentIn, AssignmentIn, SettingsIn, ApprovalIn, RejectionIn, SuspensionIn
 from ..security import hash_password
 from ..services.attendance import get_settings, notify_section
 from ..services.privacy import revoke_biometrics
@@ -49,7 +49,10 @@ def users(db: DB, admin: Admin) -> list:
 def create_user(body: UserIn, db: DB, admin: Admin) -> dict:
     if body.password is None:
         raise HTTPException(422, "Password required")
-    user = User(**body.model_dump(exclude={"password"}), password_hash=hash_password(body.password))
+    data = body.model_dump(exclude={"password"})
+    if not data.get("status"):
+        data["status"] = "approved"
+    user = User(**data, password_hash=hash_password(body.password))
     db.add(user)
     commit(db)
     return public_user(user)
@@ -211,3 +214,119 @@ def write_settings(body: SettingsIn, db: DB, admin: Admin) -> dict:
             notify_section(db, section_id)
         commit(db)
     return get_settings(db)
+
+
+@router.get("/registration-requests")
+@router.get("/admin/registration-requests")
+def list_registration_requests(db: DB, admin: Admin, status: str | None = None) -> list:
+    query = select(User)
+    if status:
+        query = query.where(User.status == status)
+    else:
+        query = query.where(User.status.in_(["pending", "rejected", "suspended"]))
+    users = db.scalars(query.order_by(User.id.desc())).all()
+    return [public_user(u) for u in users]
+
+
+@router.post("/registration-requests/{user_id}/approve")
+@router.post("/admin/registration-requests/{user_id}/approve")
+def approve_registration(user_id: int, body: ApprovalIn, db: DB, admin: Admin) -> dict:
+    user = require_row(db, User, user_id)
+    if user.status not in ("pending", "rejected"):
+        raise HTTPException(409, f"User is currently {user.status}; only pending or rejected applications can be approved")
+    user.status = "approved"
+    user.verified_method = body.verification_method
+    user.verified_by = admin.id
+    user.verified_at = now()
+    user.rejection_reason = None
+    audit = ApplicationAudit(
+        user_id=user.id,
+        actor_id=admin.id,
+        action="approved",
+        verification_method=body.verification_method,
+        reason=f"Approved via {body.verification_method.replace('_', ' ')}",
+    )
+    db.add(audit)
+    commit(db)
+    return {"approved": True, "user": public_user(user)}
+
+
+@router.post("/registration-requests/{user_id}/reject")
+@router.post("/admin/registration-requests/{user_id}/reject")
+def reject_registration(user_id: int, body: RejectionIn, db: DB, admin: Admin) -> dict:
+    user = require_row(db, User, user_id)
+    if user.id == admin.id:
+        raise HTTPException(409, "Cannot reject your own admin account")
+    user.status = "rejected"
+    user.rejection_reason = body.reason.strip()
+    audit = ApplicationAudit(
+        user_id=user.id,
+        actor_id=admin.id,
+        action="rejected",
+        reason=body.reason.strip(),
+    )
+    db.add(audit)
+    commit(db)
+    return {"rejected": True, "user": public_user(user)}
+
+
+@router.post("/users/{user_id}/suspend")
+@router.post("/admin/users/{user_id}/suspend")
+def suspend_user(user_id: int, body: SuspensionIn, db: DB, admin: Admin) -> dict:
+    user = require_row(db, User, user_id)
+    if user.id == admin.id:
+        raise HTTPException(409, "Cannot suspend your own admin account")
+    user.status = "suspended"
+    user.rejection_reason = body.reason.strip()
+    audit = ApplicationAudit(
+        user_id=user.id,
+        actor_id=admin.id,
+        action="suspended",
+        reason=body.reason.strip(),
+    )
+    db.add(audit)
+    commit(db)
+    return {"suspended": True, "user": public_user(user)}
+
+
+@router.post("/users/{user_id}/unsuspend")
+@router.post("/admin/users/{user_id}/unsuspend")
+def unsuspend_user(user_id: int, db: DB, admin: Admin) -> dict:
+    user = require_row(db, User, user_id)
+    if user.status != "suspended":
+        raise HTTPException(409, f"User is not suspended (current status: {user.status})")
+    user.status = "approved"
+    user.rejection_reason = None
+    audit = ApplicationAudit(
+        user_id=user.id,
+        actor_id=admin.id,
+        action="reactivated",
+        reason="Suspension lifted by administrator",
+    )
+    db.add(audit)
+    commit(db)
+    return {"reactivated": True, "user": public_user(user)}
+
+
+@router.get("/application-history")
+@router.get("/admin/application-history")
+def list_application_history(db: DB, admin: Admin) -> list:
+    audits = db.scalars(select(ApplicationAudit).order_by(ApplicationAudit.created_at.desc())).all()
+    out = []
+    for a in audits:
+        candidate = db.get(User, a.user_id)
+        actor = db.get(User, a.actor_id)
+        out.append({
+            "id": a.id,
+            "user_id": a.user_id,
+            "candidate_name": candidate.name if candidate else f"User #{a.user_id}",
+            "candidate_email": candidate.email if candidate else "unknown",
+            "candidate_role": candidate.role if candidate else "unknown",
+            "actor_id": a.actor_id,
+            "actor_name": actor.name if actor else f"Admin #{a.actor_id}",
+            "action": a.action,
+            "verification_method": a.verification_method,
+            "reason": a.reason,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        })
+    return out

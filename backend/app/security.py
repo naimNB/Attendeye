@@ -21,6 +21,14 @@ def verify_password(password: str, encoded: str) -> bool:
     return len(raw) <= 72 and bcrypt.checkpw(raw, encoded.encode())
 
 
+def auth_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message},
+        headers={"X-Error-Code": code}
+    )
+
+
 def token(payload: dict, purpose: str, seconds: int) -> str:
     stamp = datetime.now(timezone.utc)
     return jwt.encode({**payload, "purpose": purpose, "iat": stamp,
@@ -32,11 +40,27 @@ def decode_token(value: str, purpose: str) -> dict:
     try:
         data = jwt.decode(value, settings.jwt_secret, algorithms=["HS256"],
                           options={"require": ["exp", "iat", "purpose", "jti"]})
-        if data["purpose"] != purpose:
+        if data.get("purpose") != purpose:
             raise ValueError("Wrong token purpose")
         return data
+    except jwt.ExpiredSignatureError as exc:
+        code_map = {
+            "access": ("ACCESS_TOKEN_EXPIRED", "Access token expired"),
+            "qr": ("QR_EXPIRED", "QR code expired"),
+            "challenge": ("CHALLENGE_EXPIRED", "Challenge expired"),
+            "checkin_ticket": ("TICKET_EXPIRED", "Check-in ticket expired"),
+        }
+        code, msg = code_map.get(purpose, ("TOKEN_EXPIRED", "Token expired"))
+        raise auth_error(401, code, msg) from exc
     except (jwt.PyJWTError, ValueError) as exc:
-        raise HTTPException(401, "Invalid or expired token") from exc
+        code_map = {
+            "access": ("INVALID_ACCESS_TOKEN", "Invalid access token"),
+            "qr": ("INVALID_QR", "Invalid QR token"),
+            "challenge": ("INVALID_CHALLENGE", "Invalid challenge token"),
+            "checkin_ticket": ("INVALID_TICKET", "Invalid check-in ticket"),
+        }
+        code, msg = code_map.get(purpose, ("INVALID_TOKEN", "Invalid token"))
+        raise auth_error(401, code, msg) from exc
 
 
 @lru_cache

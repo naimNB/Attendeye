@@ -27,7 +27,7 @@ def main() -> None:
         def user(email: str, name: str, role: str, code: str | None = None) -> User:
             row = db.scalar(select(User).where(User.email == email))
             if row is None:
-                row = User(email=email, name=name, role=role, student_code=code, password_hash=hash_password(password))
+                row = User(email=email, name=name, role=role, student_code=code, password_hash=hash_password(password), status="approved")
                 db.add(row); db.flush()
             return row
         admin = user("admin@demo.invalid", "DEMO Administrator", "admin")

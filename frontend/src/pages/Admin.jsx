@@ -1,88 +1,175 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import { Heading, Field, ErrorBox, useTask } from '../components/UI';
+import { api, errorText } from '../api/client';
+import { Heading, Field, ErrorBox, useTask, Badge, Modal, Empty, SkeletonLoader } from '../components/UI';
 
-export default function Admin() {
+export default function Admin({ initialTab = 'teachers' }) {
   const task = useTask();
-  const [tab, setTab] = useState('teachers'); // 'teachers' | 'students' | 'admins' | 'academics' | 'settings'
+  const [tab, setTab] = useState(initialTab);
 
-  // Data states
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
+
+  // Core Data States
   const [users, setUsers] = useState([]);
   const [courses, setCourses] = useState([]);
   const [sections, setSections] = useState([]);
   const [enrolments, setEnrolments] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Search filter
+  // Search & Filter States
   const [search, setSearch] = useState('');
+  const [requestFilter, setRequestFilter] = useState('all');
+  const [settingsSaved, setSettingsSaved] = useState(false);
 
   // Modals & Forms
-  const [userModal, setUserModal] = useState(null);
-  const [userForm, setUserForm] = useState({ name: '', email: '', role: '', student_code: '', password: '' });
-  const [linkModal, setLinkModal] = useState(null);
+  const [userModal, setUserModal] = useState(null); // { mode: 'add' | 'edit', role, data }
+  const [userForm, setUserForm] = useState({
+    name: '',
+    email: '',
+    role: '',
+    student_code: '',
+    staff_id: '',
+    department: '',
+    batch: '',
+    password: '',
+  });
+
+  const [linkModal, setLinkModal] = useState(null); // { type: 'teacher' | 'student', userId, name }
   const [selectedSection, setSelectedSection] = useState('');
 
-  // Course / Section modal
-  const [academicModal, setAcademicModal] = useState(null);
+  const [academicModal, setAcademicModal] = useState(null); // { mode: 'add' | 'edit', type: 'course' | 'section', data }
   const [academicForm, setAcademicForm] = useState({});
 
+  const [approvalModal, setApprovalModal] = useState(null); // { user }
+  const [approvalMethod, setApprovalMethod] = useState('institutional_roster');
+
+  const [rejectionModal, setRejectionModal] = useState(null); // { user }
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  const [suspensionModal, setSuspensionModal] = useState(null); // { user }
+  const [suspensionReason, setSuspensionReason] = useState('');
+
   async function load() {
-    const [u, c, s, e, a, st] = await Promise.all([
-      api.get('/users'),
-      api.get('/courses'),
-      api.get('/sections'),
-      api.get('/enrolments'),
-      api.get('/teacher-assignments'),
-      api.get('/settings')
-    ]);
-    setUsers(u.data);
-    setCourses(c.data);
-    setSections(s.data);
-    setEnrolments(e.data);
-    setAssignments(a.data);
-    setSettings(st.data);
+    setLoading(true);
+    await task.run(async () => {
+      const [u, c, s, e, a, st, reqs, hist] = await Promise.all([
+        api.get('/users'),
+        api.get('/courses'),
+        api.get('/sections'),
+        api.get('/enrolments'),
+        api.get('/teacher-assignments'),
+        api.get('/settings'),
+        api.get('/registration-requests'),
+        api.get('/application-history'),
+      ]);
+      setUsers(u.data || []);
+      setCourses(c.data || []);
+      setSections(s.data || []);
+      setEnrolments(e.data || []);
+      setAssignments(a.data || []);
+      setSettings(st.data || null);
+      setRequests(reqs.data || []);
+      setHistory(hist.data || []);
+    });
+    setLoading(false);
   }
 
   useEffect(() => {
-    task.run(load);
+    load();
   }, []);
 
   // Filtered User Lists
   const teachers = users.filter(u => u.role === 'teacher');
   const students = users.filter(u => u.role === 'student');
   const admins = users.filter(u => u.role === 'admin');
+  const pendingRequests = requests.filter(r => r.status === 'pending');
 
-  // Search logic
+  // Client-side search filters operating on loaded dataset
   const q = search.toLowerCase().trim();
-  const filteredTeachers = teachers.filter(t => !q || t.name.toLowerCase().includes(q) || t.email.toLowerCase().includes(q));
-  const filteredStudents = students.filter(s => !q || s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q) || (s.student_code && s.student_code.toLowerCase().includes(q)));
-  const filteredAdmins = admins.filter(a => !q || a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q));
 
-  // Helpers to resolve section names
+  const filteredTeachers = teachers.filter(
+    t =>
+      !q ||
+      t.name.toLowerCase().includes(q) ||
+      t.email.toLowerCase().includes(q) ||
+      (t.staff_id && t.staff_id.toLowerCase().includes(q)) ||
+      (t.department && t.department.toLowerCase().includes(q))
+  );
+
+  const filteredStudents = students.filter(
+    s =>
+      !q ||
+      s.name.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q) ||
+      (s.student_code && s.student_code.toLowerCase().includes(q)) ||
+      (s.department && s.department.toLowerCase().includes(q)) ||
+      (s.batch && s.batch.toLowerCase().includes(q))
+  );
+
+  const filteredAdmins = admins.filter(
+    a => !q || a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q)
+  );
+
+  const filteredRequests = requests.filter(r => {
+    if (requestFilter !== 'all' && r.status !== requestFilter) return false;
+    if (!q) return true;
+    return (
+      r.name.toLowerCase().includes(q) ||
+      r.email.toLowerCase().includes(q) ||
+      (r.student_code && r.student_code.toLowerCase().includes(q)) ||
+      (r.staff_id && r.staff_id.toLowerCase().includes(q)) ||
+      (r.department && r.department.toLowerCase().includes(q))
+    );
+  });
+
+  const filteredCourses = courses.filter(
+    c => !q || c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
+  );
+
+  // Section Label Resolution Helper
   function getSectionLabel(secId) {
     const sec = sections.find(s => s.id === secId);
-    if (!sec) return `Section ${secId}`;
-    return `${sec.course_code || 'Course'} / ${sec.name}`;
+    if (!sec) return `Section #${secId}`;
+    return `${sec.course_code || 'Course'} · ${sec.name}`;
   }
 
   function getTeacherSections(teacherId) {
-    return assignments.filter(a => a.teacher_id === teacherId).map(a => ({
-      section_id: a.section_id,
-      label: getSectionLabel(a.section_id)
-    }));
+    return assignments
+      .filter(a => a.teacher_id === teacherId)
+      .map(a => ({
+        section_id: a.section_id,
+        label: getSectionLabel(a.section_id),
+      }));
   }
 
   function getStudentSections(studentId) {
-    return enrolments.filter(e => e.student_id === studentId).map(e => ({
-      section_id: e.section_id,
-      label: getSectionLabel(e.section_id)
-    }));
+    return enrolments
+      .filter(e => e.student_id === studentId)
+      .map(e => ({
+        section_id: e.section_id,
+        label: getSectionLabel(e.section_id),
+      }));
   }
 
   // User Actions
   function openAddUser(role) {
-    setUserForm({ name: '', email: '', role, student_code: '', password: '' });
+    setUserForm({
+      name: '',
+      email: '',
+      role,
+      student_code: '',
+      staff_id: '',
+      department: '',
+      batch: '',
+      password: '',
+    });
     setUserModal({ mode: 'add', role });
   }
 
@@ -92,7 +179,10 @@ export default function Admin() {
       email: user.email,
       role: user.role,
       student_code: user.student_code || '',
-      password: ''
+      staff_id: user.staff_id || '',
+      department: user.department || '',
+      batch: user.batch || '',
+      password: '',
     });
     setUserModal({ mode: 'edit', role: user.role, data: user });
   }
@@ -104,7 +194,10 @@ export default function Admin() {
         name: userForm.name.trim(),
         email: userForm.email.trim(),
         role: userForm.role,
-        student_code: userForm.role === 'student' ? (userForm.student_code?.trim() || null) : null,
+        student_code: userForm.role === 'student' ? userForm.student_code?.trim() || null : null,
+        staff_id: userForm.role === 'teacher' ? userForm.staff_id?.trim() || null : null,
+        department: userForm.department?.trim() || null,
+        batch: userForm.role === 'student' ? userForm.batch?.trim() || null : null,
       };
       if (userForm.password) {
         payload.password = userForm.password;
@@ -121,9 +214,66 @@ export default function Admin() {
   }
 
   async function handleDeleteUser(userId, name) {
-    if (!window.confirm(`Delete ${name}? Historical records may prevent deletion.`)) return;
+    if (!window.confirm(`Delete ${name}? Historical attendance records may prevent deletion if this account was part of completed class sessions.`)) {
+      return;
+    }
     await task.run(async () => {
       await api.delete(`/users/${userId}`);
+      await load();
+    });
+  }
+
+  // Registration Application Actions
+  async function handleApprove(e) {
+    e.preventDefault();
+    if (!approvalModal) return;
+    await task.run(async () => {
+      await api.post(`/registration-requests/${approvalModal.user.id}/approve`, {
+        verification_method: approvalMethod,
+      });
+      setApprovalModal(null);
+      await load();
+    });
+  }
+
+  async function handleReject(e) {
+    e.preventDefault();
+    if (!rejectionModal) return;
+    if (rejectionReason.trim().length < 3) {
+      alert('Please provide a specific justification for rejection (at least 3 characters).');
+      return;
+    }
+    await task.run(async () => {
+      await api.post(`/registration-requests/${rejectionModal.user.id}/reject`, {
+        reason: rejectionReason.trim(),
+      });
+      setRejectionModal(null);
+      setRejectionReason('');
+      await load();
+    });
+  }
+
+  async function handleSuspend(e) {
+    e.preventDefault();
+    if (!suspensionModal) return;
+    if (suspensionReason.trim().length < 3) {
+      alert('Please provide a specific reason for suspension (at least 3 characters).');
+      return;
+    }
+    await task.run(async () => {
+      await api.post(`/users/${suspensionModal.user.id}/suspend`, {
+        reason: suspensionReason.trim(),
+      });
+      setSuspensionModal(null);
+      setSuspensionReason('');
+      await load();
+    });
+  }
+
+  async function handleUnsuspend(userId) {
+    if (!window.confirm('Reactivate this account and restore portal access?')) return;
+    await task.run(async () => {
+      await api.post(`/users/${userId}/unsuspend`);
       await load();
     });
   }
@@ -136,12 +286,12 @@ export default function Admin() {
       if (linkModal.type === 'teacher') {
         await api.post('/teacher-assignments', {
           teacher_id: linkModal.userId,
-          section_id: Number(selectedSection)
+          section_id: Number(selectedSection),
         });
       } else {
         await api.post('/enrolments', {
           student_id: linkModal.userId,
-          section_id: Number(selectedSection)
+          section_id: Number(selectedSection),
         });
       }
       setLinkModal(null);
@@ -150,35 +300,60 @@ export default function Admin() {
     });
   }
 
-  async function handleRemoveAssignment(teacherId, sectionId) {
-    if (!window.confirm('Remove this section assignment?')) return;
+  async function handleUnlinkSection(type, userId, sectionId, label) {
+    if (!window.confirm(`Unassign from ${label}?`)) return;
     await task.run(async () => {
-      await api.delete(`/teacher-assignments/${teacherId}/${sectionId}`);
+      if (type === 'teacher') {
+        await api.delete(`/teacher-assignments/${userId}/${sectionId}`);
+      } else {
+        await api.delete(`/enrolments/${userId}/${sectionId}`);
+      }
       await load();
     });
   }
 
-  async function handleRemoveEnrolment(studentId, sectionId) {
-    if (!window.confirm('Un-enrol student from this section?')) return;
-    await task.run(async () => {
-      await api.delete(`/enrolments/${studentId}/${sectionId}`);
-      await load();
-    });
+  // Course & Section Management Actions
+  function openAddAcademic(type) {
+    if (type === 'course') {
+      setAcademicForm({ code: '', title: '' });
+    } else {
+      setAcademicForm({ course_id: courses[0]?.id ? String(courses[0].id) : '', name: '' });
+    }
+    setAcademicModal({ mode: 'add', type });
   }
 
-  // Course / Section Actions
+  function openEditAcademic(type, item) {
+    if (type === 'course') {
+      setAcademicForm({ code: item.code, title: item.title });
+    } else {
+      setAcademicForm({ course_id: String(item.course_id), name: item.name });
+    }
+    setAcademicModal({ mode: 'edit', type, data: item });
+  }
+
   async function handleSaveAcademic(e) {
     e.preventDefault();
     await task.run(async () => {
-      const isCourse = academicModal.type === 'course';
-      const endpoint = isCourse ? '/courses' : '/sections';
-      const body = { ...academicForm };
-      if (!isCourse) body.course_id = Number(body.course_id);
-
-      if (academicModal.mode === 'edit') {
-        await api.put(`${endpoint}/${academicModal.data.id}`, body);
+      if (academicModal.type === 'course') {
+        const payload = {
+          code: academicForm.code.trim(),
+          title: academicForm.title.trim(),
+        };
+        if (academicModal.mode === 'edit') {
+          await api.put(`/courses/${academicModal.data.id}`, payload);
+        } else {
+          await api.post('/courses', payload);
+        }
       } else {
-        await api.post(endpoint, body);
+        const payload = {
+          course_id: Number(academicForm.course_id),
+          name: academicForm.name.trim(),
+        };
+        if (academicModal.mode === 'edit') {
+          await api.put(`/sections/${academicModal.data.id}`, payload);
+        } else {
+          await api.post('/sections', payload);
+        }
       }
       setAcademicModal(null);
       await load();
@@ -186,277 +361,737 @@ export default function Admin() {
   }
 
   async function handleDeleteAcademic(type, id, label) {
-    if (!window.confirm(`Delete ${type} "${label}"?`)) return;
+    if (
+      !window.confirm(
+        `Delete ${type} "${label}"? Historical sessions, attendance logs, or rosters will prevent deletion.`
+      )
+    ) {
+      return;
+    }
     await task.run(async () => {
       await api.delete(`/${type}s/${id}`);
       await load();
     });
   }
 
+  // Settings Action
+  async function handleSaveSettings(e) {
+    e.preventDefault();
+    setSettingsSaved(false);
+    await task.run(async () => {
+      await api.put('/settings', {
+        verification_threshold: Number(settings.verification_threshold),
+        review_threshold: Number(settings.review_threshold),
+        attendance_limit: Number(settings.attendance_limit),
+      });
+      setSettingsSaved(true);
+      await load();
+    });
+  }
+
   return (
-    <>
+    <div className="space-y-6">
+      {/* Top Heading */}
       <Heading
-        title="Administration Panel"
-        detail="Manage Teachers, Students, Administrators, Courses, and System Thresholds."
+        title="System Administration"
+        detail="Institutional Governance · User Management, Registration Approvals, Academic Rosters & Recognition Policies"
       />
-      <ErrorBox error={task.error}/>
 
-      {/* Main Tabs (Strictly No Emojis/Symbols) */}
-      <nav className="flex flex-wrap gap-2 mb-6">
-        <button
-          className={`btn ${tab === 'teachers' ? '' : 'secondary'}`}
-          onClick={() => { setTab('teachers'); setSearch(''); }}
-        >
-          Teachers ({teachers.length})
-        </button>
-        <button
-          className={`btn ${tab === 'students' ? '' : 'secondary'}`}
-          onClick={() => { setTab('students'); setSearch(''); }}
-        >
-          Students ({students.length})
-        </button>
-        <button
-          className={`btn ${tab === 'admins' ? '' : 'secondary'}`}
-          onClick={() => { setTab('admins'); setSearch(''); }}
-        >
-          Administrators ({admins.length})
-        </button>
-        <button
-          className={`btn ${tab === 'academics' ? '' : 'secondary'}`}
-          onClick={() => { setTab('academics'); setSearch(''); }}
-        >
-          Courses and Sections ({courses.length}/{sections.length})
-        </button>
-        <button
-          className={`btn ${tab === 'settings' ? '' : 'secondary'}`}
-          onClick={() => { setTab('settings'); setSearch(''); }}
-        >
-          Recognition Settings
-        </button>
-      </nav>
+      <ErrorBox error={task.error} retry={load} />
 
-      {/* TEACHERS SECTION */}
+      {/* Navigation Tabs Bar */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200/80 pb-3">
+        <button
+          type="button"
+          onClick={() => {
+            setTab('requests');
+            setSearch('');
+          }}
+          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+            tab === 'requests'
+              ? 'bg-pine text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          📋 Registration Requests
+          {pendingRequests.length > 0 && (
+            <span className="ml-1.5 rounded-full bg-amber-400 text-amber-950 px-1.5 py-0.2 text-[10px] font-bold">
+              {pendingRequests.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTab('teachers');
+            setSearch('');
+          }}
+          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+            tab === 'teachers'
+              ? 'bg-pine text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          👨‍🏫 Faculty Teachers ({teachers.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTab('students');
+            setSearch('');
+          }}
+          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+            tab === 'students'
+              ? 'bg-pine text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          🎓 Enrolled Students ({students.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTab('admins');
+            setSearch('');
+          }}
+          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+            tab === 'admins'
+              ? 'bg-pine text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          🛡️ System Admins ({admins.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTab('academics');
+            setSearch('');
+          }}
+          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+            tab === 'academics'
+              ? 'bg-pine text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          🏛️ Courses & Sections ({courses.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTab('settings');
+            setSearch('');
+          }}
+          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+            tab === 'settings'
+              ? 'bg-pine text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          ⚙️ Recognition Settings
+        </button>
+      </div>
+
+      {/* ================= TAB 1: REGISTRATION REQUESTS ================= */}
+      {tab === 'requests' && (
+        <section className="space-y-6">
+          <div className="card space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-pine">
+                  Registration Applications & Institutional Verification
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Review self-registered applicants. Identity must be verified against institutional rosters or physical credentials before granting portal access.
+                </p>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-slate-500 font-medium mr-1">Status:</span>
+                {['all', 'pending', 'approved', 'rejected', 'suspended'].map(st => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setRequestFilter(st)}
+                    className={`text-xs px-2.5 py-1 rounded-lg border font-semibold capitalize transition ${
+                      requestFilter === st
+                        ? 'bg-pine text-white border-pine shadow-sm'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="flex items-center justify-between gap-3">
+              <input
+                type="text"
+                placeholder="Search applicants by name, email, student code, staff ID, or department..."
+                className="text-xs max-w-md"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <span className="text-xs text-slate-400">
+                Showing {filteredRequests.length} of {requests.length} applications
+              </span>
+            </div>
+
+            {loading ? (
+              <SkeletonLoader count={3} />
+            ) : filteredRequests.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr>
+                      <th>Applicant</th>
+                      <th>Requested Role</th>
+                      <th>Institutional Identifier</th>
+                      <th>Academic Department</th>
+                      <th>Application Status</th>
+                      <th>Submitted Date</th>
+                      <th className="text-right">Administrative Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredRequests.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50/50">
+                        <td>
+                          <div className="font-bold text-slate-900">{r.name}</div>
+                          <div className="text-xs text-slate-500 font-mono">{r.email}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Email verification planned in future release
+                          </div>
+                        </td>
+                        <td>
+                          <Badge variant={r.role === 'teacher' ? 'info' : 'live'}>
+                            {r.role?.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td>
+                          <span className="font-mono text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                            {r.student_code || r.staff_id || 'None Provided'}
+                          </span>
+                        </td>
+                        <td className="text-xs text-slate-700">
+                          <div>{r.department || '—'}</div>
+                          {r.batch && <div className="text-[11px] text-slate-400">Batch {r.batch}</div>}
+                        </td>
+                        <td>
+                          <div className="space-y-0.5">
+                            <Badge
+                              variant={
+                                r.status === 'approved'
+                                  ? 'live'
+                                  : r.status === 'pending'
+                                  ? 'review'
+                                  : r.status === 'suspended'
+                                  ? 'expired'
+                                  : 'danger'
+                              }
+                            >
+                              {r.status?.toUpperCase()}
+                            </Badge>
+                            {r.verified_method && (
+                              <div className="text-[10px] text-slate-500">
+                                Method: {r.verified_method.replace(/_/g, ' ')}
+                              </div>
+                            )}
+                            {r.rejection_reason && (
+                              <div className="text-[11px] text-rose-700 max-w-xs truncate" title={r.rejection_reason}>
+                                Reason: {r.rejection_reason}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-xs text-slate-500 whitespace-nowrap">
+                          {r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            {r.status === 'pending' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn text-xs py-1 px-3 bg-emerald-700 hover:bg-emerald-800 text-white"
+                                  onClick={() => {
+                                    setApprovalModal({ user: r });
+                                    setApprovalMethod('institutional_roster');
+                                  }}
+                                >
+                                  Verify & Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn text-xs py-1 px-2.5 bg-rose-700 hover:bg-rose-800 text-white"
+                                  onClick={() => {
+                                    setRejectionModal({ user: r });
+                                    setRejectionReason('');
+                                  }}
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {r.status === 'approved' && (
+                              <button
+                                type="button"
+                                className="btn secondary text-xs py-1 px-2.5 hover:border-amber-400 hover:text-amber-900"
+                                onClick={() => {
+                                  setSuspensionModal({ user: r });
+                                  setSuspensionReason('');
+                                }}
+                              >
+                                Suspend Access
+                              </button>
+                            )}
+                            {r.status === 'suspended' && (
+                              <button
+                                type="button"
+                                className="btn text-xs py-1 px-2.5 bg-amber-700 hover:bg-amber-800 text-white"
+                                onClick={() => handleUnsuspend(r.id)}
+                              >
+                                Reactivate
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty title="No applications found" children="No registration requests match the selected filter." />
+            )}
+          </div>
+
+          {/* APPLICATION AUDIT TRAIL */}
+          <section className="card space-y-3">
+            <div className="border-b border-slate-100 pb-2.5">
+              <h3 className="text-base font-bold text-pine">Verification Audit Trail</h3>
+              <p className="text-xs text-slate-500">
+                Immutable chronological log of all administrative identity verification decisions and rationale.
+              </p>
+            </div>
+
+            {history.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Candidate</th>
+                      <th>Role</th>
+                      <th>Decision</th>
+                      <th>Admin Actor</th>
+                      <th>Verification Method / Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {history.map(h => (
+                      <tr key={h.id} className="hover:bg-slate-50/50">
+                        <td className="text-xs text-slate-500 whitespace-nowrap">
+                          {h.created_at ? new Date(h.created_at).toLocaleString() : '—'}
+                        </td>
+                        <td>
+                          <div className="font-semibold text-slate-800">{h.candidate_name}</div>
+                          <div className="text-xs text-slate-400 font-mono">{h.candidate_email}</div>
+                        </td>
+                        <td>
+                          <Badge variant="neutral">{h.candidate_role?.toUpperCase()}</Badge>
+                        </td>
+                        <td>
+                          <Badge
+                            variant={
+                              h.action === 'approved'
+                                ? 'live'
+                                : h.action === 'rejected'
+                                ? 'danger'
+                                : 'expired'
+                            }
+                          >
+                            {h.action?.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="text-xs text-slate-700 font-medium">{h.actor_name}</td>
+                        <td className="text-xs text-slate-600">
+                          {h.verification_method && (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 font-mono text-[11px] mr-1 text-slate-700 border border-slate-200">
+                              {h.verification_method}
+                            </span>
+                          )}
+                          <span>{h.reason || '—'}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty children="No verification audit records found." />
+            )}
+          </section>
+        </section>
+      )}
+
+      {/* ================= TAB 2: FACULTY TEACHERS ================= */}
       {tab === 'teachers' && (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <section className="card space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-lg font-semibold text-pine">Teacher Management</h2>
-              <p className="muted text-xs">Assigned teachers can open sessions, review photos, and issue QR check-ins.</p>
+              <h2 className="text-base font-bold text-pine">Faculty Teacher Accounts</h2>
+              <p className="text-xs text-slate-500">
+                Assigned teachers can open attendance windows, inspect student review photos, and issue 30-second QR check-ins.
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <input
                 type="text"
-                placeholder="Search teacher by name or email..."
-                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800"
+                placeholder="Search teacher by name, email, or staff ID..."
+                className="text-xs"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              <button className="btn" onClick={() => openAddUser('teacher')}>
-                Add Teacher
+              <button
+                type="button"
+                className="btn text-xs py-2 px-3.5 shadow-sm whitespace-nowrap"
+                onClick={() => openAddUser('teacher')}
+              >
+                + Add Teacher
               </button>
             </div>
           </div>
 
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Assigned Sections</th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTeachers.map(t => {
-                  const assigned = getTeacherSections(t.id);
-                  return (
-                    <tr key={t.id}>
-                      <td className="text-xs text-slate-500">{t.id}</td>
-                      <td className="font-medium text-slate-800">{t.name}</td>
-                      <td className="text-xs text-slate-600">{t.email}</td>
-                      <td>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {assigned.map(a => (
-                            <span key={a.section_id} className="badge inline-flex items-center gap-1 text-xs">
-                              {a.label}
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Showing {filteredTeachers.length} of {teachers.length} faculty teachers</span>
+          </div>
+
+          {loading ? (
+            <SkeletonLoader count={3} />
+          ) : filteredTeachers.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr>
+                    <th>Teacher Name</th>
+                    <th>Email Address</th>
+                    <th>Staff / Faculty ID</th>
+                    <th>Department</th>
+                    <th>Assigned Sections</th>
+                    <th>Status</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredTeachers.map(t => {
+                    const secList = getTeacherSections(t.id);
+                    return (
+                      <tr key={t.id} className="hover:bg-slate-50/50">
+                        <td className="font-bold text-slate-900">{t.name}</td>
+                        <td className="text-xs font-mono text-slate-600">{t.email}</td>
+                        <td>
+                          <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {t.staff_id || '—'}
+                          </span>
+                        </td>
+                        <td className="text-xs text-slate-600">{t.department || '—'}</td>
+                        <td>
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            {secList.map(s => (
+                              <span
+                                key={s.section_id}
+                                className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-800 border border-slate-200"
+                              >
+                                {s.label}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkSection('teacher', t.id, s.section_id, s.label)}
+                                  className="text-slate-400 hover:text-rose-700 ml-0.5"
+                                  title="Unassign section"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLinkModal({ type: 'teacher', userId: t.id, name: t.name });
+                                setSelectedSection('');
+                              }}
+                              className="text-xs text-emerald-700 font-bold hover:underline ml-1"
+                            >
+                              + Assign
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <Badge variant={t.status === 'suspended' ? 'expired' : 'live'}>
+                            {t.status?.toUpperCase() || 'APPROVED'}
+                          </Badge>
+                        </td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditUser(t)}
+                              className="btn secondary text-xs py-1 px-2.5"
+                            >
+                              Edit
+                            </button>
+                            {t.status === 'suspended' ? (
                               <button
                                 type="button"
-                                title="Unassign section"
-                                className="text-red-700 hover:underline ml-1 text-xs"
-                                onClick={() => handleRemoveAssignment(t.id, a.section_id)}
+                                onClick={() => handleUnsuspend(t.id)}
+                                className="btn text-xs py-1 px-2 bg-amber-700 hover:bg-amber-800 text-white"
                               >
-                                Remove
+                                Reactivate
                               </button>
-                            </span>
-                          ))}
-                          <button
-                            type="button"
-                            className="text-xs text-emerald-800 hover:underline px-2 py-0.5 border border-dashed border-emerald-500 rounded bg-emerald-50"
-                            onClick={() => { setLinkModal({ type: 'teacher', userId: t.id, name: t.name }); setSelectedSection(''); }}
-                          >
-                            Assign Section
-                          </button>
-                        </div>
-                      </td>
-                      <td className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <button className="btn secondary text-xs py-1" onClick={() => openEditUser(t)}>Edit</button>
-                          <button className="btn secondary text-xs py-1 text-red-700" onClick={() => handleDeleteUser(t.id, t.name)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!filteredTeachers.length && (
-                  <tr>
-                    <td colSpan={5} className="text-center py-6 muted">No teachers found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSuspensionModal({ user: t });
+                                  setSuspensionReason('');
+                                }}
+                                className="btn secondary text-xs py-1 px-2 hover:border-amber-300 hover:text-amber-900"
+                              >
+                                Suspend
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(t.id, t.name)}
+                              className="btn danger text-xs py-1 px-2.5"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty title="No teachers found" children="No faculty teacher records match your search." />
+          )}
         </section>
       )}
 
-      {/* STUDENTS SECTION */}
+      {/* ================= TAB 3: ENROLLED STUDENTS ================= */}
       {tab === 'students' && (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <section className="card space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-lg font-semibold text-pine">Student Management</h2>
-              <p className="muted text-xs">Enrolled students can record multi-pose facial biometrics and perform live QR check-ins.</p>
+              <h2 className="text-base font-bold text-pine">Enrolled Student Accounts</h2>
+              <p className="text-xs text-slate-500">
+                Enrolled students can participate in 2-factor QR attendance check-in and review their attendance percentage.
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <input
                 type="text"
-                placeholder="Search by ID, name or email..."
-                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800"
+                placeholder="Search students by name, email, code, or department..."
+                className="text-xs"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              <button className="btn" onClick={() => openAddUser('student')}>
-                Add Student
+              <button
+                type="button"
+                className="btn text-xs py-2 px-3.5 shadow-sm whitespace-nowrap"
+                onClick={() => openAddUser('student')}
+              >
+                + Add Student
               </button>
             </div>
           </div>
 
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th>Student Code</th>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Enrolled Sections</th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStudents.map(s => {
-                  const enrolled = getStudentSections(s.id);
-                  return (
-                    <tr key={s.id}>
-                      <td>
-                        <span className="font-mono text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded border border-slate-200">
-                          {s.student_code || 'None'}
-                        </span>
-                      </td>
-                      <td className="font-medium text-slate-800">{s.name}</td>
-                      <td className="text-xs text-slate-600">{s.email}</td>
-                      <td>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {enrolled.map(e => (
-                            <span key={e.section_id} className="badge inline-flex items-center gap-1 text-xs">
-                              {e.label}
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Showing {filteredStudents.length} of {students.length} students</span>
+          </div>
+
+          {loading ? (
+            <SkeletonLoader count={3} />
+          ) : filteredStudents.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr>
+                    <th>Student Name</th>
+                    <th>Email Address</th>
+                    <th>Student ID / Code</th>
+                    <th>Department / Batch</th>
+                    <th>Enrolled Sections</th>
+                    <th>Status</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredStudents.map(s => {
+                    const secList = getStudentSections(s.id);
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/50">
+                        <td className="font-bold text-slate-900">{s.name}</td>
+                        <td className="text-xs font-mono text-slate-600">{s.email}</td>
+                        <td>
+                          <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {s.student_code || '—'}
+                          </span>
+                        </td>
+                        <td className="text-xs text-slate-600">
+                          <div>{s.department || '—'}</div>
+                          {s.batch && <div className="text-[11px] text-slate-400">Batch {s.batch}</div>}
+                        </td>
+                        <td>
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            {secList.map(sec => (
+                              <span
+                                key={sec.section_id}
+                                className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-800 border border-slate-200"
+                              >
+                                {sec.label}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkSection('student', s.id, sec.section_id, sec.label)}
+                                  className="text-slate-400 hover:text-rose-700 ml-0.5"
+                                  title="Unenrol from section"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLinkModal({ type: 'student', userId: s.id, name: s.name });
+                                setSelectedSection('');
+                              }}
+                              className="text-xs text-emerald-700 font-bold hover:underline ml-1"
+                            >
+                              + Enrol
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <Badge variant={s.status === 'suspended' ? 'expired' : 'live'}>
+                            {s.status?.toUpperCase() || 'APPROVED'}
+                          </Badge>
+                        </td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditUser(s)}
+                              className="btn secondary text-xs py-1 px-2.5"
+                            >
+                              Edit
+                            </button>
+                            {s.status === 'suspended' ? (
                               <button
                                 type="button"
-                                title="Un-enrol from section"
-                                className="text-red-700 hover:underline ml-1 text-xs"
-                                onClick={() => handleRemoveEnrolment(s.id, e.section_id)}
+                                onClick={() => handleUnsuspend(s.id)}
+                                className="btn text-xs py-1 px-2 bg-amber-700 hover:bg-amber-800 text-white"
                               >
-                                Remove
+                                Reactivate
                               </button>
-                            </span>
-                          ))}
-                          <button
-                            type="button"
-                            className="text-xs text-emerald-800 hover:underline px-2 py-0.5 border border-dashed border-emerald-500 rounded bg-emerald-50"
-                            onClick={() => { setLinkModal({ type: 'student', userId: s.id, name: s.name }); setSelectedSection(''); }}
-                          >
-                            Enrol Section
-                          </button>
-                        </div>
-                      </td>
-                      <td className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <button className="btn secondary text-xs py-1" onClick={() => openEditUser(s)}>Edit</button>
-                          <button className="btn secondary text-xs py-1 text-red-700" onClick={() => handleDeleteUser(s.id, s.name)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!filteredStudents.length && (
-                  <tr>
-                    <td colSpan={5} className="text-center py-6 muted">No students found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSuspensionModal({ user: s });
+                                  setSuspensionReason('');
+                                }}
+                                className="btn secondary text-xs py-1 px-2 hover:border-amber-300 hover:text-amber-900"
+                              >
+                                Suspend
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(s.id, s.name)}
+                              className="btn danger text-xs py-1 px-2.5"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty title="No students found" children="No student records match your search." />
+          )}
         </section>
       )}
 
-      {/* ADMINISTRATORS SECTION */}
+      {/* ================= TAB 4: SYSTEM ADMINISTRATORS ================= */}
       {tab === 'admins' && (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <section className="card space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-lg font-semibold text-pine">System Administrators</h2>
-              <p className="muted text-xs">Admins have full privileges across academic rosters, threshold configurations and user accounts.</p>
+              <h2 className="text-base font-bold text-pine">System Administrators</h2>
+              <p className="text-xs text-slate-500">
+                Institutional administrators with authority to manage rosters, configure recognition thresholds, and inspect audit trails.
+              </p>
             </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                placeholder="Search admin..."
-                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              <button className="btn" onClick={() => openAddUser('admin')}>
-                Add Administrator
-              </button>
-            </div>
+            <button
+              type="button"
+              className="btn text-xs py-2 px-3.5 shadow-sm"
+              onClick={() => openAddUser('admin')}
+            >
+              + Add Administrator
+            </button>
           </div>
 
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
+                  <th>Administrator Name</th>
+                  <th>Email Address</th>
+                  <th>Privilege Level</th>
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {filteredAdmins.map(a => (
-                  <tr key={a.id}>
-                    <td className="text-xs text-slate-500">{a.id}</td>
-                    <td className="font-medium text-slate-800">{a.name}</td>
-                    <td className="text-xs text-slate-600">{a.email}</td>
+                  <tr key={a.id} className="hover:bg-slate-50/50">
+                    <td className="font-bold text-slate-900">{a.name}</td>
+                    <td className="text-xs font-mono text-slate-600">{a.email}</td>
                     <td>
-                      <span className="badge text-xs">
-                        Administrator
-                      </span>
+                      <Badge variant="info">FULL ADMIN</Badge>
                     </td>
                     <td className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <button className="btn secondary text-xs py-1" onClick={() => openEditUser(a)}>Edit</button>
-                        <button className="btn secondary text-xs py-1 text-red-700" onClick={() => handleDeleteUser(a.id, a.name)}>Delete</button>
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openEditUser(a)}
+                          className="btn secondary text-xs py-1 px-2.5"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={admins.length <= 1}
+                          onClick={() => handleDeleteUser(a.id, a.name)}
+                          className="btn danger text-xs py-1 px-2.5"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -467,82 +1102,179 @@ export default function Admin() {
         </section>
       )}
 
-      {/* COURSES AND SECTIONS */}
+      {/* ================= TAB 5: COURSES & SECTIONS ================= */}
       {tab === 'academics' && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Courses */}
+        <div className="space-y-6">
+          {/* Courses Catalog Card */}
           <section className="card space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-lg font-semibold text-pine">Courses ({courses.length})</h2>
-                <p className="muted text-xs">Course codes and official titles.</p>
+                <h2 className="text-base font-bold text-pine">Course Catalog</h2>
+                <p className="text-xs text-slate-500">
+                  Institutional academic courses offering scheduled lecture sections.
+                </p>
               </div>
-              <button className="btn text-xs" onClick={() => { setAcademicForm({ code: '', title: '' }); setAcademicModal({ type: 'course', mode: 'add' }); }}>
-                Add Course
+              <button
+                type="button"
+                className="btn text-xs py-2 px-3.5 shadow-sm"
+                onClick={() => openAddAcademic('course')}
+              >
+                + Add Course
               </button>
             </div>
+
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm text-left">
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Title</th>
-                    <th className="text-right">Action</th>
+                    <th>Course Code</th>
+                    <th>Course Title</th>
+                    <th>Active Sections</th>
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {courses.map(c => (
-                    <tr key={c.id}>
-                      <td className="font-mono text-xs font-semibold text-slate-700">{c.code}</td>
-                      <td className="text-slate-800">{c.title}</td>
-                      <td className="text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <button className="btn secondary text-xs py-1" onClick={() => { setAcademicForm({ code: c.code, title: c.title }); setAcademicModal({ type: 'course', mode: 'edit', data: c }); }}>Edit</button>
-                          <button className="btn secondary text-xs py-1 text-red-700" onClick={() => handleDeleteAcademic('course', c.id, c.code)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {!courses.length && <tr><td colSpan={3} className="text-center py-4 muted">No courses.</td></tr>}
+                <tbody className="divide-y divide-slate-100">
+                  {filteredCourses.map(c => {
+                    const secCount = sections.filter(s => s.course_id === c.id).length;
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50/50">
+                        <td>
+                          <span className="font-mono font-bold text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-200">
+                            {c.code}
+                          </span>
+                        </td>
+                        <td className="font-bold text-slate-900">{c.title}</td>
+                        <td>
+                          <span className="text-xs font-semibold text-slate-600">
+                            {secCount} section{secCount !== 1 ? 's' : ''}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAcademicForm({ course_id: String(c.id), name: '' });
+                                setAcademicModal({ mode: 'add', type: 'section' });
+                              }}
+                              className="btn text-xs py-1 px-2.5 bg-pine text-white"
+                            >
+                              + Add Section
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditAcademic('course', c)}
+                              className="btn secondary text-xs py-1 px-2.5"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAcademic('course', c.id, c.code)}
+                              className="btn danger text-xs py-1 px-2.5"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </section>
 
-          {/* Sections */}
+          {/* Sections Offerings Card */}
           <section className="card space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-lg font-semibold text-pine">Sections ({sections.length})</h2>
-                <p className="muted text-xs">Course sections linked to student enrolments and teachers.</p>
+                <h2 className="text-base font-bold text-pine">Classroom Sections & Rosters</h2>
+                <p className="text-xs text-slate-500">
+                  Distinct section offerings with assigned faculty and student enrollments.
+                </p>
               </div>
-              <button className="btn text-xs" onClick={() => { setAcademicForm({ course_id: courses[0]?.id || '', name: '' }); setAcademicModal({ type: 'section', mode: 'add' }); }}>
-                Add Section
+              <button
+                type="button"
+                className="btn text-xs py-2 px-3.5 shadow-sm"
+                onClick={() => openAddAcademic('section')}
+              >
+                + Add Section
               </button>
             </div>
+
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm text-left">
                 <thead>
                   <tr>
-                    <th>Course</th>
-                    <th>Section Name</th>
-                    <th className="text-right">Action</th>
+                    <th>Section Identifier</th>
+                    <th>Course Code & Title</th>
+                    <th>Assigned Faculty</th>
+                    <th>Enrolled Students</th>
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {sections.map(s => (
-                    <tr key={s.id}>
-                      <td className="text-xs text-slate-600">{s.course_code || `Course ${s.course_id}`}</td>
-                      <td className="font-medium text-slate-800">{s.name}</td>
-                      <td className="text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <button className="btn secondary text-xs py-1" onClick={() => { setAcademicForm({ course_id: s.course_id, name: s.name }); setAcademicModal({ type: 'section', mode: 'edit', data: s }); }}>Edit</button>
-                          <button className="btn secondary text-xs py-1 text-red-700" onClick={() => handleDeleteAcademic('section', s.id, s.name)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {!sections.length && <tr><td colSpan={3} className="text-center py-4 muted">No sections.</td></tr>}
+                <tbody className="divide-y divide-slate-100">
+                  {sections.map(s => {
+                    const assignedTeachers = assignments
+                      .filter(a => a.section_id === s.id)
+                      .map(a => users.find(u => u.id === a.teacher_id)?.name || `Teacher #${a.teacher_id}`);
+                    const studentCount = enrolments.filter(e => e.section_id === s.id).length;
+
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/50">
+                        <td>
+                          <span className="font-bold text-slate-900">{s.name}</span>
+                          <span className="text-[11px] text-slate-400 font-mono ml-2">(ID: {s.id})</span>
+                        </td>
+                        <td>
+                          <span className="font-mono text-xs font-semibold text-emerald-900 mr-2">
+                            {s.course_code}
+                          </span>
+                          <span className="text-xs text-slate-600">{s.course_title}</span>
+                        </td>
+                        <td>
+                          {assignedTeachers.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {assignedTeachers.map((tName, idx) => (
+                                <span
+                                  key={idx}
+                                  className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200"
+                                >
+                                  {tName}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-amber-700 italic">No faculty assigned</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="text-xs font-semibold text-slate-700">
+                            {studentCount} student{studentCount !== 1 ? 's' : ''}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditAcademic('section', s)}
+                              className="btn secondary text-xs py-1 px-2.5"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAcademic('section', s.id, s.name)}
+                              className="btn danger text-xs py-1 px-2.5"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -550,162 +1282,308 @@ export default function Admin() {
         </div>
       )}
 
-      {/* SETTINGS SECTION */}
+      {/* ================= TAB 6: RECOGNITION SETTINGS ================= */}
       {tab === 'settings' && settings && (
-        <form className="card max-w-xl space-y-5" onSubmit={e => { e.preventDefault(); task.run(async () => { setSettings((await api.put('/settings', settings)).data); alert('Settings updated successfully.'); }); }}>
-          <div>
-            <h2 className="text-lg font-semibold text-pine">Recognition and Attendance Settings</h2>
-            <p className="muted text-xs">Tune facial recognition and attendance thresholds. Scores represent cosine similarities.</p>
+        <section className="card space-y-6">
+          <div className="border-b border-slate-100 pb-3">
+            <h2 className="text-base font-bold text-pine">
+              Attendance Limits & Biometric Recognition Policies
+            </h2>
+            <p className="text-xs text-slate-500">
+              Calibrate mathematical tolerances enforced by backend CPU neural recognition and liveness verification.
+            </p>
           </div>
-          {Object.keys(settings).map(key => (
-            <Field title={key.replaceAll('_', ' ')} key={key}>
-              <input
-                type="number"
-                required
-                min="0"
-                max={key === 'attendance_limit' ? 100 : 1}
-                step="0.01"
-                className="text-slate-800"
-                value={settings[key]}
-                onChange={e => setSettings({ ...settings, [key]: Number(e.target.value) })}
-              />
-            </Field>
-          ))}
-          <button className="btn" disabled={task.busy}>Save Settings</button>
-        </form>
-      )}
 
-      {/* USER MODAL */}
-      {userModal && (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <form className="card w-full max-w-md space-y-4" onSubmit={handleSaveUser}>
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h2 className="text-lg font-semibold text-pine">
-                {userModal.mode === 'add' ? `Add New ${userModal.role}` : `Edit ${userModal.role}`}
-              </h2>
-              <button type="button" className="text-xs text-slate-400 hover:text-slate-700" onClick={() => setUserModal(null)}>Cancel</button>
+          {settingsSaved && (
+            <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs text-emerald-950 font-bold flex items-center justify-between">
+              <span>✓ Recognition policies updated and applied system-wide!</span>
+              <button type="button" onClick={() => setSettingsSaved(false)} className="text-emerald-700">✕</button>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveSettings} className="space-y-5 max-w-2xl">
+            <div className="space-y-4">
+              <Field
+                title="Verification Threshold (0.00 – 1.00)"
+                hint="Cosine similarity match floor"
+                required
+              >
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.10"
+                  max="0.99"
+                  required
+                  value={settings.verification_threshold ?? ''}
+                  onChange={e =>
+                    setSettings({ ...settings, verification_threshold: e.target.value })
+                  }
+                  className="font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  Minimum cosine similarity score required to automatically mark a student present.
+                  Higher thresholds require closer geometric vector alignment. Cosine scores (0.00–1.00) reflect vector orientation, not classification accuracy.
+                </p>
+              </Field>
+
+              <Field
+                title="Review Ambiguity Threshold (0.00 – 1.00)"
+                hint="Review queue floor"
+                required
+              >
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.10"
+                  max="0.99"
+                  required
+                  value={settings.review_threshold ?? ''}
+                  onChange={e =>
+                    setSettings({ ...settings, review_threshold: e.target.value })
+                  }
+                  className="font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  Faces scoring between the review threshold and verification threshold are routed to the instructor's Review Queue for human confirmation.
+                  Faces below this score are classified as unknown.
+                </p>
+              </Field>
+
+              <Field
+                title="Attendance Compliance Limit (%)"
+                hint="Institutional policy floor"
+                required
+              >
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  required
+                  value={settings.attendance_limit ?? ''}
+                  onChange={e =>
+                    setSettings({ ...settings, attendance_limit: e.target.value })
+                  }
+                  className="font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  Minimum required attendance percentage across closed class sessions.
+                  Students whose attendance percentage falls below this threshold receive warning alerts and are flagged for institutional review.
+                </p>
+              </Field>
             </div>
 
-            <Field title="Full Name">
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                Server-side validated on submission.
+              </span>
+              <button
+                type="submit"
+                disabled={task.busy}
+                className="btn text-xs py-2 px-5 shadow-sm font-bold"
+              >
+                {task.busy ? 'Saving Policies...' : 'Save Recognition Policies'}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {/* ================= MODAL: USER ADD / EDIT ================= */}
+      {userModal && (
+        <Modal
+          open={Boolean(userModal)}
+          title={
+            userModal.mode === 'add'
+              ? `Create New ${userModal.role?.toUpperCase()} Account`
+              : `Edit ${userModal.data.name}`
+          }
+          description="Manage institutional credentials. Password changes take effect immediately."
+          onClose={() => setUserModal(null)}
+        >
+          <form onSubmit={handleSaveUser} className="space-y-4">
+            <Field title="Full Legal Name" required>
               <input
                 type="text"
                 required
-                placeholder="e.g. Dr. John Doe"
-                className="text-slate-800"
+                placeholder="e.g. Dr. Sarah Rahman"
                 value={userForm.name}
                 onChange={e => setUserForm({ ...userForm, name: e.target.value })}
               />
             </Field>
 
-            <Field title="Email Address">
+            <Field title="Email Address" required>
               <input
                 type="email"
                 required
-                placeholder="e.g. user@university.edu"
-                className="text-slate-800"
+                placeholder="e.g. s.rahman@university.edu"
                 value={userForm.email}
                 onChange={e => setUserForm({ ...userForm, email: e.target.value })}
               />
             </Field>
 
             {userModal.role === 'student' && (
-              <Field title="Student ID or Code">
+              <Field title="Student ID or Code" required>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. 2026-CSE-001"
-                  className="text-slate-800"
+                  placeholder="e.g. 2026-CSE-042"
                   value={userForm.student_code}
                   onChange={e => setUserForm({ ...userForm, student_code: e.target.value })}
+                  className="font-mono"
                 />
               </Field>
             )}
 
-            <Field title={userModal.mode === 'add' ? 'Password (minimum 10 characters)' : 'Change Password (leave empty to keep current)'}>
+            {userModal.role === 'teacher' && (
+              <Field title="Faculty / Staff ID" required>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. FAC-CSE-101"
+                  value={userForm.staff_id}
+                  onChange={e => setUserForm({ ...userForm, staff_id: e.target.value })}
+                  className="font-mono"
+                />
+              </Field>
+            )}
+
+            <Field title="Academic Department">
+              <input
+                type="text"
+                placeholder="e.g. Computer Science & Engineering"
+                value={userForm.department}
+                onChange={e => setUserForm({ ...userForm, department: e.target.value })}
+              />
+            </Field>
+
+            {userModal.role === 'student' && (
+              <Field title="Batch / Cohort">
+                <input
+                  type="text"
+                  placeholder="e.g. 52nd Batch"
+                  value={userForm.batch}
+                  onChange={e => setUserForm({ ...userForm, batch: e.target.value })}
+                />
+              </Field>
+            )}
+
+            <Field
+              title={
+                userModal.mode === 'add'
+                  ? 'Password (minimum 10 characters)'
+                  : 'Change Password (leave empty to keep unchanged)'
+              }
+              required={userModal.mode === 'add'}
+            >
               <input
                 type="password"
                 required={userModal.mode === 'add'}
                 minLength={10}
-                placeholder={userModal.mode === 'add' ? 'At least 10 characters' : 'Leave empty to keep unchanged'}
+                placeholder={userModal.mode === 'add' ? 'At least 10 characters' : '••••••••••••'}
                 value={userForm.password}
                 onChange={e => setUserForm({ ...userForm, password: e.target.value })}
               />
             </Field>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn secondary" onClick={() => setUserModal(null)}>Cancel</button>
-              <button className="btn" disabled={task.busy}>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setUserModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={task.busy}
+                className="btn text-xs py-2 px-4"
+              >
                 {userModal.mode === 'add' ? 'Create Account' : 'Save Changes'}
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       )}
 
-      {/* LINK MODAL */}
+      {/* ================= MODAL: LINK SECTION ================= */}
       {linkModal && (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <form className="card w-full max-w-sm space-y-4" onSubmit={handleAssignSection}>
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h2 className="text-base font-semibold text-pine">
-                {linkModal.type === 'teacher' ? `Assign Section to ${linkModal.name}` : `Enrol ${linkModal.name} in Section`}
-              </h2>
-              <button type="button" className="text-xs text-slate-400 hover:text-slate-700" onClick={() => setLinkModal(null)}>Cancel</button>
-            </div>
-
-            <Field title="Select Course Section">
+        <Modal
+          open={Boolean(linkModal)}
+          title={
+            linkModal.type === 'teacher'
+              ? `Assign Section to ${linkModal.name}`
+              : `Enrol ${linkModal.name} in Section`
+          }
+          description="Link an academic section to this account."
+          onClose={() => setLinkModal(null)}
+        >
+          <form onSubmit={handleAssignSection} className="space-y-4">
+            <Field title="Select Course Section" required>
               <select
                 required
-                className="text-slate-800"
                 value={selectedSection}
                 onChange={e => setSelectedSection(e.target.value)}
               >
-                <option value="">Choose a Section</option>
+                <option value="">Choose an available section...</option>
                 {sections.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.course_code || 'Course'} / {s.name}
+                    {s.course_code} · {s.name} (Section #{s.id})
                   </option>
                 ))}
               </select>
             </Field>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn secondary" onClick={() => setLinkModal(null)}>Cancel</button>
-              <button className="btn" disabled={!selectedSection || task.busy}>
-                Confirm
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setLinkModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!selectedSection || task.busy}
+                className="btn text-xs py-2 px-4"
+              >
+                Confirm Link
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       )}
 
-      {/* ACADEMIC MODAL */}
+      {/* ================= MODAL: ACADEMIC (COURSE / SECTION) ================= */}
       {academicModal && (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <form className="card w-full max-w-sm space-y-4" onSubmit={handleSaveAcademic}>
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h2 className="text-base font-semibold text-pine">
-                {academicModal.mode === 'add' ? `Add ${academicModal.type}` : `Edit ${academicModal.type}`}
-              </h2>
-              <button type="button" className="text-xs text-slate-400 hover:text-slate-700" onClick={() => setAcademicModal(null)}>Cancel</button>
-            </div>
-
+        <Modal
+          open={Boolean(academicModal)}
+          title={
+            academicModal.mode === 'add'
+              ? `Add New ${academicModal.type === 'course' ? 'Course' : 'Section'}`
+              : `Edit ${academicModal.type === 'course' ? 'Course' : 'Section'}`
+          }
+          description="Configure institutional academic offerings."
+          onClose={() => setAcademicModal(null)}
+        >
+          <form onSubmit={handleSaveAcademic} className="space-y-4">
             {academicModal.type === 'course' ? (
               <>
-                <Field title="Course Code (e.g. CSE-3205)">
+                <Field title="Course Catalog Code" hint="e.g. CSE-3205" required>
                   <input
                     type="text"
                     required
-                    className="text-slate-800"
+                    placeholder="e.g. CSE-3205"
+                    className="font-mono"
                     value={academicForm.code || ''}
                     onChange={e => setAcademicForm({ ...academicForm, code: e.target.value })}
                   />
                 </Field>
-                <Field title="Course Title">
+
+                <Field title="Course Title" hint="Official catalog title" required>
                   <input
                     type="text"
                     required
-                    className="text-slate-800"
+                    placeholder="e.g. Computer Vision & Neural Systems"
                     value={academicForm.title || ''}
                     onChange={e => setAcademicForm({ ...academicForm, title: e.target.value })}
                   />
@@ -713,24 +1591,26 @@ export default function Admin() {
               </>
             ) : (
               <>
-                <Field title="Parent Course">
+                <Field title="Parent Course" required>
                   <select
                     required
-                    className="text-slate-800"
                     value={academicForm.course_id || ''}
                     onChange={e => setAcademicForm({ ...academicForm, course_id: e.target.value })}
                   >
-                    <option value="">Choose Course</option>
+                    <option value="">Select parent course...</option>
                     {courses.map(c => (
-                      <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.code} · {c.title}
+                      </option>
                     ))}
                   </select>
                 </Field>
-                <Field title="Section Name (e.g. Section A)">
+
+                <Field title="Section Name" hint="e.g. Section A" required>
                   <input
                     type="text"
                     required
-                    className="text-slate-800"
+                    placeholder="e.g. Section A"
                     value={academicForm.name || ''}
                     onChange={e => setAcademicForm({ ...academicForm, name: e.target.value })}
                   />
@@ -738,13 +1618,158 @@ export default function Admin() {
               </>
             )}
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn secondary" onClick={() => setAcademicModal(null)}>Cancel</button>
-              <button className="btn" disabled={task.busy}>Save</button>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setAcademicModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={task.busy}
+                className="btn text-xs py-2 px-4"
+              >
+                Save
+              </button>
             </div>
           </form>
-        </div>
+        </Modal>
       )}
-    </>
+
+      {/* ================= MODAL: APPLICATION APPROVAL ================= */}
+      {approvalModal && (
+        <Modal
+          open={Boolean(approvalModal)}
+          title={`Verify & Approve: ${approvalModal.user.name}`}
+          description="Administrative roster cross-check is required before granting access."
+          onClose={() => setApprovalModal(null)}
+        >
+          <form onSubmit={handleApprove} className="space-y-4">
+            <div className="text-xs text-slate-700 space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div><span className="font-semibold text-slate-500">Applicant:</span> {approvalModal.user.name} ({approvalModal.user.email})</div>
+              <div><span className="font-semibold text-slate-500">Requested Role:</span> {approvalModal.user.role?.toUpperCase()}</div>
+              <div><span className="font-semibold text-slate-500">Submitted ID:</span> {approvalModal.user.student_code || approvalModal.user.staff_id || 'None'}</div>
+              <div><span className="font-semibold text-slate-500">Department:</span> {approvalModal.user.department || '—'}</div>
+            </div>
+
+            <Field title="Identity Verification Method" required>
+              <select
+                required
+                value={approvalMethod}
+                onChange={e => setApprovalMethod(e.target.value)}
+              >
+                <option value="institutional_roster">Official Institutional Roster Cross-check</option>
+                <option value="in_person_id">In-Person University ID Physical Inspection</option>
+                <option value="department_records">Departmental HR / Dean Certified Records</option>
+              </select>
+            </Field>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setApprovalModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={task.busy}
+                className="btn bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2 px-4"
+              >
+                Confirm Verification & Approve
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ================= MODAL: APPLICATION REJECTION ================= */}
+      {rejectionModal && (
+        <Modal
+          open={Boolean(rejectionModal)}
+          title={`Reject Application: ${rejectionModal.user.name}`}
+          description="The applicant will see this reason upon attempting sign-in."
+          onClose={() => setRejectionModal(null)}
+        >
+          <form onSubmit={handleReject} className="space-y-4">
+            <Field title="Mandatory Rejection Reason" hint="Min 3 characters" required>
+              <textarea
+                required
+                minLength={3}
+                rows={3}
+                placeholder="e.g. Student ID does not match registrar records for department CSE."
+                value={rejectionReason}
+                onChange={e => setRejectionReason(e.target.value)}
+              />
+            </Field>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setRejectionModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={rejectionReason.trim().length < 3 || task.busy}
+                className="btn danger text-xs py-2 px-4"
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ================= MODAL: ACCOUNT SUSPENSION ================= */}
+      {suspensionModal && (
+        <Modal
+          open={Boolean(suspensionModal)}
+          title={`Suspend Account: ${suspensionModal.user.name}`}
+          description="Active tokens will be invalidated immediately on next request."
+          onClose={() => setSuspensionModal(null)}
+        >
+          <form onSubmit={handleSuspend} className="space-y-4">
+            <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 p-3 rounded-xl">
+              <p className="font-bold">Immediate Invalidation Notice:</p>
+              <p>Suspending this user blocks all portal access and immediately rejects existing JWT access tokens.</p>
+            </div>
+
+            <Field title="Mandatory Suspension Reason" hint="Min 3 characters" required>
+              <textarea
+                required
+                minLength={3}
+                rows={3}
+                placeholder="e.g. Account suspended pending academic integrity inquiry."
+                value={suspensionReason}
+                onChange={e => setSuspensionReason(e.target.value)}
+              />
+            </Field>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setSuspensionModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={suspensionReason.trim().length < 3 || task.busy}
+                className="btn bg-amber-700 hover:bg-amber-800 text-white text-xs py-2 px-4"
+              >
+                Confirm Suspension
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
   );
 }

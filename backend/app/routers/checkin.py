@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from ..deps import DB, Teacher, Student, Current, session_access
 from ..models import QRRedemption, AttendanceRecord, CheckinTicket, now
 from ..schemas import ChallengeIn, CheckinStartIn
-from ..security import token, decode_token
+from ..security import token, decode_token, auth_error
 from ..services.challenges import issue, consume
 from ..services.uploads import read_image
 from ..services.recognition import analyse, gallery_for
@@ -26,7 +26,7 @@ def qr_window(stamp: float | None = None) -> int:
 def verify_qr(signed: str, session_id: int) -> None:
     data = decode_token(signed, "qr")
     if data.get("sid") != session_id or data.get("window") != qr_window():
-        raise HTTPException(401, "QR code expired or belongs to another session")
+        raise auth_error(401, "QR_EXPIRED", "QR code expired or belongs to another session")
 
 
 @router.get("/liveness/status")

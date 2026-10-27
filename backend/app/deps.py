@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User, Section, TeacherAssignment, ClassSession, Enrolment, now
-from .security import decode_token
+from .security import decode_token, auth_error
 
 bearer = HTTPBearer(auto_error=False)
 DB = Annotated[Session, Depends(get_db)]
@@ -13,14 +13,16 @@ DB = Annotated[Session, Depends(get_db)]
 
 def current_user(db: DB, auth: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> User:
     if auth is None:
-        raise HTTPException(401, "Login required")
+        raise auth_error(401, "AUTH_REQUIRED", "Login required")
     data = decode_token(auth.credentials, "access")
     try:
         user = db.get(User, int(data["sub"]))
     except (KeyError, ValueError, TypeError):
         user = None
     if user is None:
-        raise HTTPException(401, "Account unavailable")
+        raise auth_error(401, "ACCOUNT_UNAVAILABLE", "Account unavailable")
+    if getattr(user, "status", "approved") == "suspended":
+        raise auth_error(401, "ACCOUNT_UNAVAILABLE", "Account has been suspended")
     return user
 
 
@@ -29,6 +31,9 @@ Current = Annotated[User, Depends(current_user)]
 
 def roles(*allowed: str):
     def guard(user: Current) -> User:
+        user_status = getattr(user, "status", "approved")
+        if user_status != "approved":
+            raise HTTPException(403, f"Account is {user_status}. Access to protected features is restricted.")
         if user.role not in allowed:
             raise HTTPException(403, "Role not permitted")
         return user
@@ -65,4 +70,18 @@ def session_access(db: Session, user: User, session_id: int, capture: bool = Fal
 
 
 def public_user(user: User) -> dict:
-    return {key: getattr(user, key) for key in ("id", "name", "email", "role", "student_code")}
+    created_iso = user.created_at.isoformat() if hasattr(user, "created_at") and user.created_at else None
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "status": getattr(user, "status", "approved"),
+        "student_code": getattr(user, "student_code", None),
+        "staff_id": getattr(user, "staff_id", None),
+        "department": getattr(user, "department", None),
+        "batch": getattr(user, "batch", None),
+        "rejection_reason": getattr(user, "rejection_reason", None),
+        "verified_method": getattr(user, "verified_method", None),
+        "created_at": created_iso,
+    }
