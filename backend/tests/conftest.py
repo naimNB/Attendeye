@@ -17,6 +17,18 @@ from app.main import app
 from app.database import Base, engine, SessionLocal
 from app.models import User, Course, Section, TeacherAssignment, Enrolment
 from app.security import hash_password, token
+from app.routers.auth import _attempts, _reg_attempts, _lock
+
+
+@pytest.fixture(autouse=True)
+def isolate_rate_limits():
+    with _lock:
+        _attempts.clear()
+        _reg_attempts.clear()
+    yield
+    with _lock:
+        _attempts.clear()
+        _reg_attempts.clear()
 
 
 @pytest.fixture

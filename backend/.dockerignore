@@ -1,0 +1,25 @@
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Local databases and runtime directories
+*.db
+*.db-*
+*.sqlite*
+attendeye.db*
+private/
+data/
+
+# Model binaries (mounted read-only at runtime)
+models/insightface/models/
+models/*.onnx
+models/*.zip
+
+# Python caches and virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+tests/__pycache__/

@@ -47,6 +47,10 @@ export default function Admin({ initialTab = 'teachers' }) {
   const [academicModal, setAcademicModal] = useState(null); // { mode: 'add' | 'edit', type: 'course' | 'section', data }
   const [academicForm, setAcademicForm] = useState({});
 
+  const [rosterModal, setRosterModal] = useState(null); // { section, data, loading }
+  const [rosterStudentId, setRosterStudentId] = useState('');
+  const [rosterActionError, setRosterActionError] = useState('');
+
   const [approvalModal, setApprovalModal] = useState(null); // { user }
   const [approvalMethod, setApprovalMethod] = useState('institutional_roster');
 
@@ -227,12 +231,17 @@ export default function Admin({ initialTab = 'teachers' }) {
   async function handleApprove(e) {
     e.preventDefault();
     if (!approvalModal) return;
+    const candidate = approvalModal.user;
     await task.run(async () => {
-      await api.post(`/registration-requests/${approvalModal.user.id}/approve`, {
+      await api.post(`/registration-requests/${candidate.id}/approve`, {
         verification_method: approvalMethod,
       });
       setApprovalModal(null);
       await load();
+      if (candidate.role === 'student') {
+        setLinkModal({ type: 'student', userId: candidate.id, name: candidate.name });
+        setSelectedSection('');
+      }
     });
   }
 
@@ -312,12 +321,61 @@ export default function Admin({ initialTab = 'teachers' }) {
     });
   }
 
+  // Section Roster Inspection & Modification
+  async function openSectionRoster(sec) {
+    setRosterModal({ section: sec, data: null, loading: true });
+    setRosterStudentId('');
+    setRosterActionError('');
+    try {
+      const res = await api.get(`/sections/${sec.id}/roster`);
+      setRosterModal({ section: sec, data: res.data, loading: false });
+    } catch (err) {
+      setRosterActionError(err.response?.data?.detail || err.message || 'Failed to load roster');
+      setRosterModal({ section: sec, data: null, loading: false });
+    }
+  }
+
+  async function handleAddStudentToRoster(e) {
+    e.preventDefault();
+    if (!rosterStudentId || !rosterModal?.section) return;
+    setRosterActionError('');
+    try {
+      await api.post('/enrolments', {
+        student_id: Number(rosterStudentId),
+        section_id: rosterModal.section.id,
+      });
+      setRosterStudentId('');
+      const res = await api.get(`/sections/${rosterModal.section.id}/roster`);
+      setRosterModal(prev => ({ ...prev, data: res.data }));
+      await load();
+    } catch (err) {
+      setRosterActionError(err.response?.data?.detail || err.message || 'Failed to enrol student');
+    }
+  }
+
+  async function handleRemoveStudentFromRoster(studentId, studentName) {
+    if (!window.confirm(`Unenrol ${studentName} from this section?`)) return;
+    setRosterActionError('');
+    try {
+      await api.delete(`/enrolments/${studentId}/${rosterModal.section.id}`);
+      const res = await api.get(`/sections/${rosterModal.section.id}/roster`);
+      setRosterModal(prev => ({ ...prev, data: res.data }));
+      await load();
+    } catch (err) {
+      setRosterActionError(err.response?.data?.detail || err.message || 'Failed to remove student');
+    }
+  }
+
   // Course & Section Management Actions
   function openAddAcademic(type) {
     if (type === 'course') {
       setAcademicForm({ code: '', title: '' });
     } else {
-      setAcademicForm({ course_id: courses[0]?.id ? String(courses[0].id) : '', name: '' });
+      setAcademicForm({
+        course_id: courses[0]?.id ? String(courses[0].id) : '',
+        name: '',
+        room: '',
+      });
     }
     setAcademicModal({ mode: 'add', type });
   }
@@ -326,7 +384,11 @@ export default function Admin({ initialTab = 'teachers' }) {
     if (type === 'course') {
       setAcademicForm({ code: item.code, title: item.title });
     } else {
-      setAcademicForm({ course_id: String(item.course_id), name: item.name });
+      setAcademicForm({
+        course_id: String(item.course_id),
+        name: item.name,
+        room: item.room || '',
+      });
     }
     setAcademicModal({ mode: 'edit', type, data: item });
   }
@@ -348,6 +410,7 @@ export default function Admin({ initialTab = 'teachers' }) {
         const payload = {
           course_id: Number(academicForm.course_id),
           name: academicForm.name.trim(),
+          room: academicForm.room ? academicForm.room.trim() : null,
         };
         if (academicModal.mode === 'edit') {
           await api.put(`/sections/${academicModal.data.id}`, payload);
@@ -409,11 +472,11 @@ export default function Admin({ initialTab = 'teachers' }) {
           }}
           className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
             tab === 'requests'
-              ? 'bg-pine text-white shadow-sm'
+              ? 'bg-teal-700 text-white shadow-sm'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          📋 Registration Requests
+          Registration Requests
           {pendingRequests.length > 0 && (
             <span className="ml-1.5 rounded-full bg-amber-400 text-amber-950 px-1.5 py-0.2 text-[10px] font-bold">
               {pendingRequests.length}
@@ -429,11 +492,11 @@ export default function Admin({ initialTab = 'teachers' }) {
           }}
           className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
             tab === 'teachers'
-              ? 'bg-pine text-white shadow-sm'
+              ? 'bg-teal-700 text-white shadow-sm'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          👨‍🏫 Faculty Teachers ({teachers.length})
+          Faculty Teachers ({teachers.length})
         </button>
 
         <button
@@ -444,11 +507,11 @@ export default function Admin({ initialTab = 'teachers' }) {
           }}
           className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
             tab === 'students'
-              ? 'bg-pine text-white shadow-sm'
+              ? 'bg-teal-700 text-white shadow-sm'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          🎓 Enrolled Students ({students.length})
+          Enrolled Students ({students.length})
         </button>
 
         <button
@@ -459,11 +522,11 @@ export default function Admin({ initialTab = 'teachers' }) {
           }}
           className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
             tab === 'admins'
-              ? 'bg-pine text-white shadow-sm'
+              ? 'bg-teal-700 text-white shadow-sm'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          🛡️ System Admins ({admins.length})
+          System Admins ({admins.length})
         </button>
 
         <button
@@ -474,11 +537,11 @@ export default function Admin({ initialTab = 'teachers' }) {
           }}
           className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
             tab === 'academics'
-              ? 'bg-pine text-white shadow-sm'
+              ? 'bg-teal-700 text-white shadow-sm'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          🏛️ Courses & Sections ({courses.length})
+          Courses & Sections ({courses.length})
         </button>
 
         <button
@@ -489,11 +552,11 @@ export default function Admin({ initialTab = 'teachers' }) {
           }}
           className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
             tab === 'settings'
-              ? 'bg-pine text-white shadow-sm'
+              ? 'bg-teal-700 text-white shadow-sm'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          ⚙️ Recognition Settings
+          Recognition Settings
         </button>
       </div>
 
@@ -503,7 +566,7 @@ export default function Admin({ initialTab = 'teachers' }) {
           <div className="card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-pine">
+                <h2 className="text-base font-bold text-slate-900">
                   Registration Applications & Institutional Verification
                 </h2>
                 <p className="text-xs text-slate-500">
@@ -521,7 +584,7 @@ export default function Admin({ initialTab = 'teachers' }) {
                     onClick={() => setRequestFilter(st)}
                     className={`text-xs px-2.5 py-1 rounded-lg border font-semibold capitalize transition ${
                       requestFilter === st
-                        ? 'bg-pine text-white border-pine shadow-sm'
+                        ? 'bg-teal-700 text-white border-teal-700 shadow-sm'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                     }`}
                   >
@@ -642,16 +705,28 @@ export default function Admin({ initialTab = 'teachers' }) {
                               </>
                             )}
                             {r.status === 'approved' && (
-                              <button
-                                type="button"
-                                className="btn secondary text-xs py-1 px-2.5 hover:border-amber-400 hover:text-amber-900"
-                                onClick={() => {
-                                  setSuspensionModal({ user: r });
-                                  setSuspensionReason('');
-                                }}
-                              >
-                                Suspend Access
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn text-xs py-1 px-2.5 bg-teal-700 hover:bg-teal-800 text-white shadow-xs"
+                                  onClick={() => {
+                                    setLinkModal({ type: r.role, userId: r.id, name: r.name });
+                                    setSelectedSection('');
+                                  }}
+                                >
+                                  {r.role === 'teacher' ? '+ Assign Section' : '+ Enrol in Section'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn secondary text-xs py-1 px-2.5 hover:border-amber-400 hover:text-amber-900"
+                                  onClick={() => {
+                                    setSuspensionModal({ user: r });
+                                    setSuspensionReason('');
+                                  }}
+                                >
+                                  Suspend Access
+                                </button>
+                              </>
                             )}
                             {r.status === 'suspended' && (
                               <button
@@ -677,7 +752,7 @@ export default function Admin({ initialTab = 'teachers' }) {
           {/* APPLICATION AUDIT TRAIL */}
           <section className="card space-y-3">
             <div className="border-b border-slate-100 pb-2.5">
-              <h3 className="text-base font-bold text-pine">Verification Audit Trail</h3>
+              <h3 className="text-base font-bold text-slate-900">Verification Audit Trail</h3>
               <p className="text-xs text-slate-500">
                 Immutable chronological log of all administrative identity verification decisions and rationale.
               </p>
@@ -748,7 +823,7 @@ export default function Admin({ initialTab = 'teachers' }) {
         <section className="card space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-base font-bold text-pine">Faculty Teacher Accounts</h2>
+              <h2 className="text-base font-bold text-slate-900">Faculty Teacher Accounts</h2>
               <p className="text-xs text-slate-500">
                 Assigned teachers can open attendance windows, inspect student review photos, and issue 30-second QR check-ins.
               </p>
@@ -817,8 +892,11 @@ export default function Admin({ initialTab = 'teachers' }) {
                                   onClick={() => handleUnlinkSection('teacher', t.id, s.section_id, s.label)}
                                   className="text-slate-400 hover:text-rose-700 ml-0.5"
                                   title="Unassign section"
+                                  aria-label={`Unassign ${s.label}`}
                                 >
-                                  ✕
+                                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
                                 </button>
                               </span>
                             ))}
@@ -894,7 +972,7 @@ export default function Admin({ initialTab = 'teachers' }) {
         <section className="card space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-base font-bold text-pine">Enrolled Student Accounts</h2>
+              <h2 className="text-base font-bold text-slate-900">Enrolled Student Accounts</h2>
               <p className="text-xs text-slate-500">
                 Enrolled students can participate in 2-factor QR attendance check-in and review their attendance percentage.
               </p>
@@ -932,6 +1010,7 @@ export default function Admin({ initialTab = 'teachers' }) {
                     <th>Email Address</th>
                     <th>Student ID / Code</th>
                     <th>Department / Batch</th>
+                    <th>Face Enrolment</th>
                     <th>Enrolled Sections</th>
                     <th>Status</th>
                     <th className="text-right">Actions</th>
@@ -954,6 +1033,15 @@ export default function Admin({ initialTab = 'teachers' }) {
                           {s.batch && <div className="text-[11px] text-slate-400">Batch {s.batch}</div>}
                         </td>
                         <td>
+                          {s.biometric_enrolled ? (
+                            <Badge variant="live">ENROLLED (5/5)</Badge>
+                          ) : s.biometric_samples > 0 ? (
+                            <Badge variant="review">{s.biometric_samples}/5 SAMPLES</Badge>
+                          ) : (
+                            <Badge variant="neutral">NOT ENROLLED</Badge>
+                          )}
+                        </td>
+                        <td>
                           <div className="flex flex-wrap gap-1.5 items-center">
                             {secList.map(sec => (
                               <span
@@ -966,8 +1054,11 @@ export default function Admin({ initialTab = 'teachers' }) {
                                   onClick={() => handleUnlinkSection('student', s.id, sec.section_id, sec.label)}
                                   className="text-slate-400 hover:text-rose-700 ml-0.5"
                                   title="Unenrol from section"
+                                  aria-label={`Unenrol from ${sec.label}`}
                                 >
-                                  ✕
+                                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
                                 </button>
                               </span>
                             ))}
@@ -1043,7 +1134,7 @@ export default function Admin({ initialTab = 'teachers' }) {
         <section className="card space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-base font-bold text-pine">System Administrators</h2>
+              <h2 className="text-base font-bold text-slate-900">System Administrators</h2>
               <p className="text-xs text-slate-500">
                 Institutional administrators with authority to manage rosters, configure recognition thresholds, and inspect audit trails.
               </p>
@@ -1109,7 +1200,7 @@ export default function Admin({ initialTab = 'teachers' }) {
           <section className="card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-pine">Course Catalog</h2>
+                <h2 className="text-base font-bold text-slate-900">Course Catalog</h2>
                 <p className="text-xs text-slate-500">
                   Institutional academic courses offering scheduled lecture sections.
                 </p>
@@ -1139,7 +1230,7 @@ export default function Admin({ initialTab = 'teachers' }) {
                     return (
                       <tr key={c.id} className="hover:bg-slate-50/50">
                         <td>
-                          <span className="font-mono font-bold text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-200">
+                          <span className="font-mono font-bold text-teal-900 bg-teal-100/80 px-2 py-0.5 rounded border border-teal-200">
                             {c.code}
                           </span>
                         </td>
@@ -1157,7 +1248,7 @@ export default function Admin({ initialTab = 'teachers' }) {
                                 setAcademicForm({ course_id: String(c.id), name: '' });
                                 setAcademicModal({ mode: 'add', type: 'section' });
                               }}
-                              className="btn text-xs py-1 px-2.5 bg-pine text-white"
+                              className="btn text-xs py-1 px-2.5 bg-teal-700 text-white hover:bg-teal-800"
                             >
                               + Add Section
                             </button>
@@ -1189,7 +1280,7 @@ export default function Admin({ initialTab = 'teachers' }) {
           <section className="card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-pine">Classroom Sections & Rosters</h2>
+                <h2 className="text-base font-bold text-slate-900">Classroom Sections & Rosters</h2>
                 <p className="text-xs text-slate-500">
                   Distinct section offerings with assigned faculty and student enrollments.
                 </p>
@@ -1209,8 +1300,10 @@ export default function Admin({ initialTab = 'teachers' }) {
                   <tr>
                     <th>Section Identifier</th>
                     <th>Course Code & Title</th>
+                    <th>Room / Location</th>
                     <th>Assigned Faculty</th>
                     <th>Enrolled Students</th>
+                    <th>Roster Status</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1234,6 +1327,15 @@ export default function Admin({ initialTab = 'teachers' }) {
                           <span className="text-xs text-slate-600">{s.course_title}</span>
                         </td>
                         <td>
+                          {s.room ? (
+                            <span className="font-mono text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                              {s.room}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Unassigned</span>
+                          )}
+                        </td>
+                        <td>
                           {assignedTeachers.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {assignedTeachers.map((tName, idx) => (
@@ -1254,8 +1356,22 @@ export default function Admin({ initialTab = 'teachers' }) {
                             {studentCount} student{studentCount !== 1 ? 's' : ''}
                           </span>
                         </td>
+                        <td>
+                          {s.roster_frozen ? (
+                            <Badge variant="review">ROSTER FROZEN</Badge>
+                          ) : (
+                            <Badge variant="live">ACTIVE</Badge>
+                          )}
+                        </td>
                         <td className="text-right">
                           <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openSectionRoster(s)}
+                              className="btn text-xs py-1 px-2.5 bg-teal-700 hover:bg-teal-800 text-white"
+                            >
+                              View Roster
+                            </button>
                             <button
                               type="button"
                               onClick={() => openEditAcademic('section', s)}
@@ -1286,7 +1402,7 @@ export default function Admin({ initialTab = 'teachers' }) {
       {tab === 'settings' && settings && (
         <section className="card space-y-6">
           <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-base font-bold text-pine">
+            <h2 className="text-base font-bold text-slate-900">
               Attendance Limits & Biometric Recognition Policies
             </h2>
             <p className="text-xs text-slate-500">
@@ -1296,8 +1412,22 @@ export default function Admin({ initialTab = 'teachers' }) {
 
           {settingsSaved && (
             <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs text-emerald-950 font-bold flex items-center justify-between">
-              <span>✓ Recognition policies updated and applied system-wide!</span>
-              <button type="button" onClick={() => setSettingsSaved(false)} className="text-emerald-700">✕</button>
+              <span className="flex items-center gap-1.5">
+                <svg className="h-4 w-4 shrink-0 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Recognition policies updated and applied system-wide.
+              </span>
+              <button
+                type="button"
+                onClick={() => setSettingsSaved(false)}
+                className="text-emerald-700 hover:text-emerald-900 p-0.5"
+                aria-label="Dismiss notification"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           )}
 
@@ -1525,11 +1655,14 @@ export default function Admin({ initialTab = 'teachers' }) {
                 onChange={e => setSelectedSection(e.target.value)}
               >
                 <option value="">Choose an available section...</option>
-                {sections.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.course_code} · {s.name} (Section #{s.id})
-                  </option>
-                ))}
+                {sections.map(s => {
+                  const isBlocked = linkModal.type === 'student' && s.roster_frozen;
+                  return (
+                    <option key={s.id} value={s.id} disabled={isBlocked}>
+                      {s.course_code} · {s.name} {s.room ? `(${s.room})` : ''} {isBlocked ? '— [ROSTER FROZEN]' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </Field>
 
@@ -1591,9 +1724,16 @@ export default function Admin({ initialTab = 'teachers' }) {
               </>
             ) : (
               <>
+                {academicModal.mode === 'edit' && academicModal.data?.roster_frozen && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 font-medium">
+                    <strong>Roster is Frozen:</strong> Historical class sessions exist. You can safely rename the section and change the room, but changing the parent course is restricted.
+                  </div>
+                )}
+
                 <Field title="Parent Course" required>
                   <select
                     required
+                    disabled={academicModal.mode === 'edit' && academicModal.data?.roster_frozen}
                     value={academicForm.course_id || ''}
                     onChange={e => setAcademicForm({ ...academicForm, course_id: e.target.value })}
                   >
@@ -1613,6 +1753,15 @@ export default function Admin({ initialTab = 'teachers' }) {
                     placeholder="e.g. Section A"
                     value={academicForm.name || ''}
                     onChange={e => setAcademicForm({ ...academicForm, name: e.target.value })}
+                  />
+                </Field>
+
+                <Field title="Room / Location" hint="Default classroom location (optional, e.g. Room 402, Lab 3)">
+                  <input
+                    type="text"
+                    placeholder="e.g. Room 402"
+                    value={academicForm.room || ''}
+                    onChange={e => setAcademicForm({ ...academicForm, room: e.target.value })}
                   />
                 </Field>
               </>
@@ -1768,6 +1917,145 @@ export default function Admin({ initialTab = 'teachers' }) {
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+      {/* ================= MODAL: SECTION ROSTER ================= */}
+      {rosterModal && (
+        <Modal
+          open={Boolean(rosterModal)}
+          title={`${rosterModal.section?.course_code || 'Course'} · ${rosterModal.section?.name || 'Section'} — Class Roster`}
+          description={`Classroom Location: ${rosterModal.section?.room || 'None assigned'} · Section ID #${rosterModal.section?.id}`}
+          onClose={() => setRosterModal(null)}
+        >
+          <div className="space-y-4">
+            {rosterActionError && (
+              <ErrorBox error={rosterActionError} />
+            )}
+
+            {rosterModal.data?.roster_frozen && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-3.5 text-xs text-amber-950 font-medium space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <svg className="h-4 w-4 text-amber-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  Roster is Frozen
+                </div>
+                <p>
+                  Historical class sessions have been recorded for this section. Enrolment modifications are locked to preserve historical attendance records. To enrol different students, please create a new section.
+                </p>
+              </div>
+            )}
+
+            {/* Quick Enrol Student form (only if not frozen) */}
+            {!rosterModal.data?.roster_frozen && (
+              <form onSubmit={handleAddStudentToRoster} className="flex flex-wrap items-end gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Enrol Approved Student into Section
+                  </label>
+                  <select
+                    required
+                    value={rosterStudentId}
+                    onChange={e => setRosterStudentId(e.target.value)}
+                    className="text-xs"
+                  >
+                    <option value="">Select student...</option>
+                    {students
+                      .filter(s => s.status === 'approved' && !rosterModal.data?.students?.some(en => en.id === s.id))
+                      .map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.student_code || s.email}) {s.biometric_enrolled ? '· Face Ready' : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  disabled={!rosterStudentId}
+                  className="btn text-xs py-2 px-3.5 bg-teal-700 hover:bg-teal-800 text-white shadow-xs"
+                >
+                  + Enrol Student
+                </button>
+              </form>
+            )}
+
+            {/* Enrolled Students Table */}
+            <div>
+              <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                <span className="font-semibold text-slate-700">
+                  Enrolled Students ({rosterModal.data?.students?.length || 0})
+                </span>
+              </div>
+
+              {rosterModal.loading ? (
+                <SkeletonLoader count={2} />
+              ) : rosterModal.data?.students?.length > 0 ? (
+                <div className="overflow-x-auto max-h-80 overflow-y-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-3">Student Name</th>
+                        <th className="py-2 px-3">Student Code</th>
+                        <th className="py-2 px-3">Face Enrolment</th>
+                        <th className="py-2 px-3">Status</th>
+                        {!rosterModal.data?.roster_frozen && <th className="py-2 px-3 text-right">Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {rosterModal.data.students.map(st => (
+                        <tr key={st.id} className="hover:bg-slate-50/50">
+                          <td className="py-2 px-3 font-semibold text-slate-900">
+                            <div>{st.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{st.email}</div>
+                          </td>
+                          <td className="py-2 px-3 font-mono text-slate-700">{st.student_code || '—'}</td>
+                          <td className="py-2 px-3">
+                            {st.biometric_enrolled ? (
+                              <Badge variant="live">ENROLLED (5/5)</Badge>
+                            ) : st.biometric_samples > 0 ? (
+                              <Badge variant="review">{st.biometric_samples}/5 SAMPLES</Badge>
+                            ) : (
+                              <Badge variant="neutral">NOT ENROLLED</Badge>
+                            )}
+                          </td>
+                          <td className="py-2 px-3">
+                            <Badge variant={st.status === 'approved' ? 'live' : 'expired'}>
+                              {st.status?.toUpperCase()}
+                            </Badge>
+                          </td>
+                          {!rosterModal.data?.roster_frozen && (
+                            <td className="py-2 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveStudentFromRoster(st.id, st.name)}
+                                className="text-xs text-rose-700 hover:text-rose-900 font-semibold"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500 border border-slate-200">
+                  No students are enrolled in this section yet.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn secondary text-xs py-2 px-4"
+                onClick={() => setRosterModal(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

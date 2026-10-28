@@ -37,9 +37,13 @@ def cleanup(db: Session) -> int:
     # Covers orphan files left by a rolled-back transaction or interrupted request.
     if settings.private_dir.exists():
         import time
+        now_ts = time.time()
         for path in settings.private_dir.glob("*.enc"):
-            if path.stat().st_mtime < time.time() - 86400:
-                path.unlink(missing_ok=True)
+            try:
+                if path.stat().st_mtime < now_ts - 86400:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
     return count
 
 

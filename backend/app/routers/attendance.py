@@ -46,6 +46,11 @@ def correct(record_id: int, body: Correction, db: DB, teacher: Teacher) -> dict:
         record = db.get(AttendanceRecord, record_id)
         if record is None: raise HTTPException(404, "Record not found")
         row = session_access(db, teacher, record.session_id)
+        if not db.get(Enrolment, (record.student_id, row.section_id)):
+            raise HTTPException(422, "Student is not enrolled in this section")
+        student = db.get(User, record.student_id)
+        if student is None or student.role != "student" or student.status != "approved":
+            raise HTTPException(422, "Student account is not approved")
         if row.require_qr and body.status == "present" and db.get(QRRedemption, (row.id, record.student_id)) is None:
             raise HTTPException(409, "QR-required session needs a successful two-factor check-in")
         updated = set_record(db, row.id, record.student_id, body.status, source="manual", actor_id=teacher.id, reason=body.reason)
@@ -96,6 +101,9 @@ def resolve(item_id: int, body: Resolution, db: DB, teacher: Teacher) -> dict:
         row = session_access(db, teacher, item.session_id)
         if item.status != "pending": raise HTTPException(409, "Already resolved")
         if body.student_id is not None:
+            student = db.get(User, body.student_id)
+            if student is None or student.role != "student" or student.status != "approved":
+                raise HTTPException(422, "Student account is not approved")
             if not db.get(Enrolment, (body.student_id, row.section_id)):
                 raise HTTPException(422, "Student is not on this class roster")
             if row.require_qr and not db.get(QRRedemption, (row.id, body.student_id)):

@@ -41,6 +41,7 @@ export default function TeacherDashboard() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [form, setForm] = useState({
     section_id: '',
+    room: '',
     starts_at: localIsoString(new Date()),
     ends_at: localIsoString(new Date(Date.now() + 2 * 3600000)),
     require_qr: true,
@@ -48,24 +49,45 @@ export default function TeacherDashboard() {
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
 
+  function openCreateModal(sectionId = null) {
+    const secId = sectionId || (sections[0]?.id ? String(sections[0].id) : '');
+    const matched = sections.find(s => String(s.id) === String(secId));
+    setForm({
+      section_id: secId,
+      room: matched?.room || '',
+      starts_at: localIsoString(new Date()),
+      ends_at: localIsoString(new Date(Date.now() + 2 * 3600000)),
+      require_qr: true,
+    });
+    setCreateError('');
+    setCreateModalOpen(true);
+  }
+
+  function handleSectionChange(secId) {
+    const matched = sections.find(s => String(s.id) === String(secId));
+    setForm(prev => ({
+      ...prev,
+      section_id: secId,
+      room: matched?.room || prev.room,
+    }));
+  }
+
   async function loadData() {
     setLoading(true);
     await task.run(async () => {
       const [sessRes, secRes] = await Promise.all([
-        api.get('/sessions'),
-        api.get('/sections'),
+        api.get('/sessions').catch(() => ({ data: [] })),
+        api.get('/sections').catch(() => ({ data: [] })),
       ]);
       setSessions(sessRes.data || []);
       setSections(secRes.data || []);
 
-      // Fetch pending reviews count using actual analytics endpoint
       try {
         const analyticsRes = await api.get('/analytics');
         const reviewCounts = analyticsRes.data?.review || [];
         const pendingItem = reviewCounts.find(r => r.name === 'pending');
         setPendingReviewsCount(pendingItem?.count || 0);
       } catch (_) {
-        // Fallback: If analytics is unavailable, pending count remains 0
         setPendingReviewsCount(0);
       }
     });
@@ -76,7 +98,6 @@ export default function TeacherDashboard() {
     loadData();
   }, []);
 
-  // Classify sessions by operational status
   const now = new Date();
   const activeSessions = sessions.filter(
     s => s.status === 'open' && new Date(s.ends_at) >= now
@@ -86,13 +107,11 @@ export default function TeacherDashboard() {
   );
   const closedSessions = sessions.filter(s => s.status === 'closed');
 
-  // Filter sessions scheduled for today
   const todaySessions = sessions.filter(s => {
     const start = new Date(s.starts_at);
     return isSameDay(start, now);
   });
 
-  // Formatted date string for academic header
   const todayFormatted = new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
     month: 'long',
@@ -106,7 +125,7 @@ export default function TeacherDashboard() {
     setCreating(true);
     try {
       if (!form.section_id) {
-        setCreateError('Please select a course section.');
+        setCreateError('Please select an assigned course section.');
         setCreating(false);
         return;
       }
@@ -115,6 +134,7 @@ export default function TeacherDashboard() {
         starts_at: new Date(form.starts_at).toISOString(),
         ends_at: new Date(form.ends_at).toISOString(),
         require_qr: Boolean(form.require_qr),
+        room: form.room ? form.room.trim() : null,
       });
       setCreateModalOpen(false);
       navigate(`/teacher/sessions/${res.data.id}`);
@@ -128,7 +148,7 @@ export default function TeacherDashboard() {
   function getSectionLabel(sectionId) {
     const sec = sections.find(s => s.id === sectionId);
     if (!sec) return `Section #${sectionId}`;
-    return `${sec.course_code} · ${sec.name}`;
+    return `${sec.course_code} · ${sec.name}${sec.room ? ` (${sec.room})` : ''}`;
   }
 
   return (
@@ -141,28 +161,19 @@ export default function TeacherDashboard() {
       >
         <button
           type="button"
-          onClick={() => {
-            setForm({
-              section_id: sections[0]?.id ? String(sections[0].id) : '',
-              starts_at: localIsoString(new Date()),
-              ends_at: localIsoString(new Date(Date.now() + 2 * 3600000)),
-              require_qr: true,
-            });
-            setCreateError('');
-            setCreateModalOpen(true);
-          }}
-          className="btn shadow-sm"
+          onClick={() => openCreateModal()}
+          className="btn text-xs py-2 px-4 shadow-sm"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
           </svg>
-          Create Session
+          Start New Session
         </button>
       </Heading>
 
       <ErrorBox error={task.error} retry={loadData} />
 
-      {/* Real API Summary Cards */}
+      {/* Summary Stat Cards */}
       {loading ? (
         <SkeletonLoader count={1} className="h-28" />
       ) : (
@@ -185,7 +196,7 @@ export default function TeacherDashboard() {
               ) : null
             }
             icon={
-              <svg className="h-5 w-5 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-teal-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
             }
@@ -196,8 +207,8 @@ export default function TeacherDashboard() {
             value={pendingReviewsCount}
             detail={
               pendingReviewsCount > 0
-                ? 'Unconfirmed faces needing teacher verification'
-                : 'All face detections resolved'
+                ? 'Candidate matches needing instructor resolution'
+                : 'All face matches resolved'
             }
             highlight={pendingReviewsCount > 0}
             badge={
@@ -220,7 +231,7 @@ export default function TeacherDashboard() {
             detail="Active teaching rosters"
             badge={<Badge variant="info">SECTIONS</Badge>}
             icon={
-              <svg className="h-5 w-5 text-pine" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-teal-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             }
@@ -230,7 +241,7 @@ export default function TeacherDashboard() {
             title="Completed Sessions"
             value={closedSessions.length}
             detail={`${sessions.length} total sessions recorded`}
-            badge={<Badge variant="neutral">ARCHIVED</Badge>}
+            badge={<Badge variant="neutral">FINALIZED</Badge>}
             icon={
               <svg className="h-5 w-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -240,71 +251,6 @@ export default function TeacherDashboard() {
         </div>
       )}
 
-      {/* Quick Navigation Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Link
-          to="/teacher/sessions"
-          className="card card-hover flex flex-col justify-between group"
-        >
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="badge bg-emerald-50 text-emerald-800 border border-emerald-200">
-                Sessions
-              </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
-                Browse →
-              </span>
-            </div>
-            <h3 className="mt-3 text-base font-bold text-slate-900">Class Sessions & Live View</h3>
-            <p className="muted mt-1 text-xs leading-relaxed">
-              Open attendance windows, display rotating 30-second QR codes, or capture classroom photos.
-            </p>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 text-xs font-medium text-slate-600">
-            {sessions.length} total session{sessions.length !== 1 ? 's' : ''} in record
-          </div>
-        </Link>
-
-        <Link
-          to="/teacher/analytics"
-          className="card card-hover flex flex-col justify-between group"
-        >
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="badge bg-teal-50 text-teal-800 border border-teal-200">
-                Analytics
-              </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
-                Explore →
-              </span>
-            </div>
-            <h3 className="mt-3 text-base font-bold text-slate-900">Attendance Trends & Risk</h3>
-            <p className="muted mt-1 text-xs leading-relaxed">
-              Track attendance percentage by section, spot at-risk students below threshold, and review audit records.
-            </p>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 text-xs font-medium text-slate-600">
-            Download CSV / View charts
-          </div>
-        </Link>
-
-        <div className="card bg-slate-50/80 border-slate-200 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="badge bg-slate-200/80 text-slate-700">Policy</span>
-              <span className="text-xs text-slate-500 font-mono">CV 1.0</span>
-            </div>
-            <h3 className="mt-3 text-base font-bold text-slate-900">Ethical AI Standards</h3>
-            <p className="muted mt-1 text-xs leading-relaxed">
-              Facial biometrics are computed in volatile memory. Unrecognized faces are never auto-assigned; human review is mandatory.
-            </p>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-200/60 text-xs text-slate-500">
-            Compliant with university data privacy rules
-          </div>
-        </div>
-      </div>
-
       {/* Main Content Area: Today's Schedule & Recent Sessions */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column (2/3): Today's Schedule + Recent Activity */}
@@ -313,7 +259,7 @@ export default function TeacherDashboard() {
           <section className="card space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-pine">Today's Class Schedule</h2>
+                <h2 className="text-base font-bold text-slate-900">Today's Class Schedule</h2>
                 <p className="text-xs text-slate-500">Scheduled attendance sessions for {todayFormatted}</p>
               </div>
               {todaySessions.length > 0 && (
@@ -360,7 +306,7 @@ export default function TeacherDashboard() {
                       <div className="flex items-center gap-2">
                         <Link
                           to={`/teacher/sessions/${s.id}`}
-                          className={`btn text-xs py-1.5 px-3.5 ${isLive ? 'bg-pine text-white' : 'secondary'}`}
+                          className={`btn text-xs py-1.5 px-3.5 ${isLive ? '' : 'secondary'}`}
                         >
                           {isLive ? 'Open Capture Workspace →' : 'Manage Session →'}
                         </Link>
@@ -376,16 +322,7 @@ export default function TeacherDashboard() {
                 action={
                   <button
                     type="button"
-                    onClick={() => {
-                      setForm({
-                        section_id: sections[0]?.id ? String(sections[0].id) : '',
-                        starts_at: localIsoString(new Date()),
-                        ends_at: localIsoString(new Date(Date.now() + 2 * 3600000)),
-                        require_qr: true,
-                      });
-                      setCreateError('');
-                      setCreateModalOpen(true);
-                    }}
+                    onClick={() => openCreateModal()}
                     className="btn secondary text-xs py-1.5 px-3"
                   >
                     + Schedule Session for Today
@@ -399,12 +336,12 @@ export default function TeacherDashboard() {
           <section className="card space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-pine">Recent Class Sessions</h2>
+                <h2 className="text-base font-bold text-slate-900">Recent Class Sessions</h2>
                 <p className="text-xs text-slate-500">Previous sessions across your assigned courses</p>
               </div>
               <Link
                 to="/teacher/sessions"
-                className="text-xs font-semibold text-pine hover:underline"
+                className="text-xs font-semibold text-teal-800 hover:text-teal-950 underline"
               >
                 View All ({sessions.length}) →
               </Link>
@@ -421,7 +358,7 @@ export default function TeacherDashboard() {
                   return (
                     <div
                       key={s.id}
-                      className="py-3 flex flex-wrap items-center justify-between gap-3 text-sm hover:bg-slate-50/50 px-2 rounded-xl transition-colors"
+                      className="py-3 flex flex-wrap items-center justify-between gap-3 text-sm hover:bg-slate-50 px-2 rounded-xl transition-colors"
                     >
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
@@ -437,7 +374,7 @@ export default function TeacherDashboard() {
                           Session #{s.id} · {new Date(s.starts_at).toLocaleDateString()} at{' '}
                           {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           {' · '}
-                          {s.require_qr ? 'QR + Face' : 'Photo capture'}
+                          {s.require_qr ? 'QR + Face' : 'Classroom photo'}
                         </p>
                       </div>
 
@@ -445,14 +382,14 @@ export default function TeacherDashboard() {
                         to={`/teacher/sessions/${s.id}`}
                         className="btn secondary text-xs py-1.5 px-3"
                       >
-                        Details →
+                        Workspace →
                       </Link>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <Empty>No class sessions created yet.</Empty>
+              <Empty children="No class sessions created yet." />
             )}
           </section>
         </div>
@@ -462,7 +399,7 @@ export default function TeacherDashboard() {
           {/* Assigned Sections Card */}
           <section className="card space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-base font-bold text-pine">My Course Sections</h2>
+              <h2 className="text-base font-bold text-slate-900">My Course Sections</h2>
               <span className="text-xs text-slate-500 font-medium">
                 {sections.length} active
               </span>
@@ -475,10 +412,10 @@ export default function TeacherDashboard() {
                 {sections.map(sec => (
                   <div
                     key={sec.id}
-                    className="rounded-xl border border-slate-200/80 p-3 bg-slate-50/50 hover:bg-white hover:border-emerald-300 transition-all"
+                    className="rounded-xl border border-slate-200 p-3 bg-slate-50/50 hover:bg-white hover:border-slate-300 transition-all"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-900 bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                      <span className="text-xs font-bold text-teal-900 bg-teal-100/70 px-2 py-0.5 rounded-md font-mono">
                         {sec.course_code}
                       </span>
                       <span className="text-[11px] font-semibold text-slate-500">
@@ -486,21 +423,15 @@ export default function TeacherDashboard() {
                       </span>
                     </div>
                     <p className="mt-1.5 font-medium text-sm text-slate-900">{sec.name}</p>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      {sec.room ? `Room: ${sec.room}` : 'No classroom assigned'}
+                    </p>
                     <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-200/50">
-                      <span className="text-[11px] text-slate-500">Semester Term</span>
+                      <span className="text-[11px] text-slate-500">Semester Offering</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setForm({
-                            section_id: String(sec.id),
-                            starts_at: localIsoString(new Date()),
-                            ends_at: localIsoString(new Date(Date.now() + 2 * 3600000)),
-                            require_qr: true,
-                          });
-                          setCreateError('');
-                          setCreateModalOpen(true);
-                        }}
-                        className="text-xs font-semibold text-pine hover:underline"
+                        onClick={() => openCreateModal(String(sec.id))}
+                        className="text-xs font-semibold text-teal-800 hover:text-teal-950 underline"
                       >
                         + Start Session
                       </button>
@@ -516,18 +447,18 @@ export default function TeacherDashboard() {
           {/* Pending Reviews Notice (if applicable) */}
           {pendingReviewsCount > 0 && (
             <div className="card border-amber-300 bg-amber-50/70 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+              <div className="flex items-center gap-2 text-amber-950 font-bold text-sm">
                 <svg className="h-5 w-5 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 Pending Review Items
               </div>
-              <p className="text-xs text-amber-800 leading-relaxed">
-                You have <strong>{pendingReviewsCount}</strong> face match item(s) awaiting resolution across recent class sessions. Inspect thumbnails and confirm student IDs.
+              <p className="text-xs text-amber-900 leading-relaxed">
+                You have <strong>{pendingReviewsCount}</strong> face match candidate(s) awaiting resolution across recent class sessions. Inspect thumbnails and confirm student identities.
               </p>
               <Link
                 to="/teacher/sessions"
-                className="inline-block mt-2 text-xs font-bold text-amber-900 underline hover:text-amber-950"
+                className="inline-block mt-2 text-xs font-bold text-amber-950 underline hover:text-amber-900"
               >
                 Go to Sessions to resolve reviews →
               </Link>
@@ -535,17 +466,17 @@ export default function TeacherDashboard() {
           )}
 
           {/* Quick Guidance Box */}
-          <div className="card bg-emerald-50/40 border-emerald-200/80 p-4 space-y-2">
-            <div className="flex items-center gap-2 text-pine font-bold text-sm">
-              <svg className="h-4 w-4 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="card bg-slate-50 border-slate-200 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+              <svg className="h-4 w-4 text-teal-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Faculty Tips
             </div>
             <ul className="text-xs text-slate-600 space-y-1.5 list-disc pl-4 leading-relaxed">
-              <li>Ensure good classroom lighting when taking group photographs.</li>
-              <li>Rotating QR check-in enforces 2-factor physical attendance.</li>
-              <li>Always finalize attendance by closing the session after class.</li>
+              <li>Ensure even classroom lighting when capturing group photographs.</li>
+              <li>Rotating QR check-in enforces 2-factor physical attendance in class.</li>
+              <li>Always finalize attendance by clicking Close Session when class concludes.</li>
             </ul>
           </div>
         </div>
@@ -565,21 +496,30 @@ export default function TeacherDashboard() {
             <select
               required
               value={form.section_id}
-              onChange={e => setForm({ ...form, section_id: e.target.value })}
+              onChange={e => handleSectionChange(e.target.value)}
             >
               <option value="">Select an assigned section...</option>
               {sections.map(s => (
                 <option value={s.id} key={s.id}>
-                  {s.course_code} · {s.name} (ID: {s.id})
+                  {s.course_code} · {s.name} {s.room ? `(${s.room})` : ''}
                 </option>
               ))}
             </select>
           </Field>
 
-          <label className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-xs text-emerald-950 cursor-pointer">
+          <Field title="Classroom / Room" hint="Defaulted from section; override if relocating">
+            <input
+              type="text"
+              placeholder="e.g. Room 402"
+              value={form.room || ''}
+              onChange={e => setForm({ ...form, room: e.target.value })}
+            />
+          </Field>
+
+          <label className="flex items-start gap-2.5 rounded-xl border border-teal-200 bg-teal-50/50 p-3 text-xs text-teal-950 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-emerald-400 text-pine focus:ring-emerald-500"
+              className="mt-0.5"
               checked={form.require_qr}
               onChange={e => setForm({ ...form, require_qr: e.target.checked })}
             />
@@ -615,14 +555,14 @@ export default function TeacherDashboard() {
             <button
               type="button"
               onClick={() => setCreateModalOpen(false)}
-              className="btn secondary text-xs py-2 px-4"
+              className="btn secondary btn-sm text-xs"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={creating}
-              className="btn text-xs py-2 px-5"
+              className="btn btn-sm text-xs py-2 px-5"
             >
               {creating ? 'Creating Session...' : 'Create & Open Workspace →'}
             </button>

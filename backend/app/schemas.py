@@ -83,6 +83,7 @@ class CourseIn(Input):
 class SectionIn(Input):
     course_id: int
     name: str = Field(min_length=1, max_length=80)
+    room: str | None = Field(default=None, max_length=80)
 
 
 class EnrolmentIn(Input):
@@ -118,6 +119,7 @@ class SessionIn(Input):
     starts_at: datetime
     ends_at: datetime
     require_qr: bool = False
+    room: str | None = Field(default=None, max_length=80)
 
     @field_validator("starts_at", "ends_at")
     @classmethod

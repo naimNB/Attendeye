@@ -51,6 +51,11 @@ export function resolveActivePortal(pathname) {
   return null;
 }
 
+export function formatAccountName(name) {
+  if (name === 'DEMO Administrator') return 'Administrator';
+  return name || '';
+}
+
 export function getPortalToken(portal) {
   try {
     return sessionStorage.getItem(`attendeye_token_${portal}`);

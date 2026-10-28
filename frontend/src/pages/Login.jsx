@@ -2,57 +2,51 @@ import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../components/Auth';
 import { useTask, ErrorBox, Field } from '../components/UI';
+
 export default function Login() {
-  const { user, login } = useAuth(); const task = useTask();
-  const [email, setEmail] = useState(''), [password, setPassword] = useState('');
-  function fill(demoEmail) {
-    setEmail(demoEmail);
-    setPassword('password123');
-  }
+  const { user, login } = useAuth();
+  const task = useTask();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   if (user) return <Navigate to="/" replace/>;
 
   return (
-    <div className="grid min-h-screen place-items-center p-6">
-      <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border bg-white shadow-xl md:grid-cols-2">
-        <div className="bg-pine p-10 text-white">
-          <div className="mb-20 text-sm font-semibold tracking-widest text-emerald-200">PUB / TRACK B4</div>
-          <h1 className="text-4xl text-white">Every class.<br/>Every student.</h1>
-          <p className="mt-5 text-emerald-100">A clear attendance record, with face matching, consent and teacher review.</p>
-          <div className="mt-12 rounded-xl bg-emerald-900/40 p-4 border border-emerald-700/50">
-            <p className="text-xs font-semibold text-emerald-300 uppercase tracking-wider mb-2">Default Password</p>
-            <code className="text-sm font-mono text-white bg-black/30 px-2 py-1 rounded">password123</code>
+    <div className="grid min-h-screen place-items-center p-6 bg-slate-50">
+      <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl md:grid-cols-2">
+        <div className="bg-slate-900 p-10 text-white flex flex-col justify-between">
+          <div>
+            <div className="mb-12 flex items-center gap-3">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-700 font-bold text-white text-xs">
+                PUB
+              </span>
+              <span className="font-bold text-sm tracking-tight text-white">
+                PUB AttendEye
+              </span>
+            </div>
+            <div className="mb-4 text-xs font-bold tracking-widest text-teal-400 uppercase">PUB / ACADEMIC ACCESS</div>
+            <h1 className="text-3xl font-extrabold text-white leading-tight">Every class.<br/>Every student.</h1>
+            <p className="mt-4 text-sm text-slate-300 leading-relaxed">A clear attendance record, with face matching, consent and teacher review.</p>
           </div>
-          <p className="mt-8 text-xs text-emerald-200">University hackathon prototype</p>
+          <p className="mt-8 text-xs text-slate-400">Academic Attendance & Biometric Verification System</p>
         </div>
-        <form className="space-y-4 p-10" onSubmit={e => { e.preventDefault(); task.run(() => login(email.trim(), password)); }}>
-          <h2 className="text-2xl font-bold">Welcome to AttendEye</h2>
-          <p className="muted text-sm">Sign in with a demo account below:</p>
-          
-          <div className="flex flex-wrap gap-2 pt-1 pb-2">
-            <button type="button" onClick={() => fill('admin@demo.invalid')} className="rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition">
-              Admin
-            </button>
-            <button type="button" onClick={() => fill('teacher1@demo.invalid')} className="rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition">
-              Teacher 1
-            </button>
-            <button type="button" onClick={() => fill('student1@demo.invalid')} className="rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition">
-              Student 1
-            </button>
-            <button type="button" onClick={() => fill('student2@demo.invalid')} className="rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition">
-              Student 2
-            </button>
-          </div>
+        <form className="space-y-4 p-10 flex flex-col justify-between" onSubmit={e => { e.preventDefault(); task.run(() => login(email.trim(), password)); }}>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Welcome to PUB AttendEye</h2>
+            <p className="text-sm text-slate-500 mt-1">Sign in with your institutional account:</p>
 
-          <ErrorBox error={task.error}/>
-          <Field title="Email">
-            <input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} placeholder="e.g. admin@demo.invalid"/>
-          </Field>
-          <Field title="Password">
-            <input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"/>
-          </Field>
-          <button disabled={task.busy} className="btn w-full">{task.busy ? 'Signing in…' : 'Sign in'}</button>
-          <p className="muted text-xs">Signing out or refreshing clears your browser login. No biometric data is stored in your browser.</p>
+            <div className="mt-6 space-y-4">
+              <ErrorBox error={task.error}/>
+              <Field title="Email Address" required>
+                <input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} placeholder="name@university.edu"/>
+              </Field>
+              <Field title="Password" required>
+                <input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"/>
+              </Field>
+              <button disabled={task.busy} className="btn w-full mt-2">{task.busy ? 'Signing in…' : 'Sign in'}</button>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 pt-6">Signing out or refreshing clears your browser login. Biometric face vectors are encrypted with Fernet.</p>
         </form>
       </div>
     </div>

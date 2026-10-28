@@ -33,6 +33,8 @@ def validate_link(db: DB, body: object, role: str) -> None:
     require_row(db, Section, body.section_id)
     if person.role != role:
         raise HTTPException(422, f"User must be a {role}")
+    if person.status != "approved":
+        raise HTTPException(422, f"Cannot assign {role} with status '{person.status}'. Account must be approved first.")
 
 
 def roster_unlocked(db: DB, section_id: int) -> None:
@@ -42,7 +44,25 @@ def roster_unlocked(db: DB, section_id: int) -> None:
 
 @router.get("/users")
 def users(db: DB, admin: Admin) -> list:
-    return [public_user(u) for u in db.scalars(select(User).order_by(User.id))]
+    from ..models import Consent, FaceEmbedding
+    consented_students = set(db.scalars(select(Consent.student_id).where(Consent.revoked_at.is_(None))))
+    embedding_counts = dict(db.execute(select(FaceEmbedding.student_id, func.count(FaceEmbedding.id)).group_by(FaceEmbedding.student_id)).fetchall())
+    poses_map = {}
+    for sid, pose in db.execute(select(FaceEmbedding.student_id, FaceEmbedding.pose_label)).fetchall():
+        poses_map.setdefault(sid, set()).add(pose)
+
+    out = []
+    for u in db.scalars(select(User).order_by(User.id)):
+        info = public_user(u)
+        if u.role == "student":
+            count = embedding_counts.get(u.id, 0)
+            poses = poses_map.get(u.id, set())
+            complete = count >= 5 and {"front", "left", "right", "up", "down"}.issubset(poses)
+            info["biometric_enrolled"] = complete
+            info["biometric_samples"] = count
+            info["biometric_consented"] = u.id in consented_students
+        out.append(info)
+    return out
 
 
 @router.post("/users", status_code=201)
@@ -115,31 +135,107 @@ def sections(db: DB, user: Current) -> list:
         query = query.join(Enrolment, Enrolment.section_id == Section.id).where(Enrolment.student_id == user.id)
     elif user.role == "teacher":
         query = query.join(TeacherAssignment, TeacherAssignment.section_id == Section.id).where(TeacherAssignment.teacher_id == user.id)
-    return [{"id": row.id, "course_id": row.course_id, "name": row.name,
-             "course_code": db.get(Course, row.course_id).code} for row in db.scalars(query)]
+    out = []
+    for row in db.scalars(query):
+        course = db.get(Course, row.course_id)
+        has_sessions = bool(db.scalar(select(ClassSession.id).where(ClassSession.section_id == row.id).limit(1)))
+        out.append({
+            "id": row.id,
+            "course_id": row.course_id,
+            "name": row.name,
+            "room": getattr(row, "room", None),
+            "course_code": course.code if course else None,
+            "course_title": course.title if course else None,
+            "roster_frozen": has_sessions,
+        })
+    return out
 
 
 @router.post("/sections", status_code=201)
 def create_section(body: SectionIn, db: DB, admin: Admin) -> dict:
     require_row(db, Course, body.course_id)
-    row = Section(**body.model_dump()); db.add(row); commit(db)
-    return {"id": row.id, **body.model_dump()}
+    existing = db.scalar(select(Section).where(Section.course_id == body.course_id, Section.name == body.name))
+    if existing:
+        raise HTTPException(409, f"Section '{body.name}' already exists for this course")
+    row = Section(**body.model_dump())
+    db.add(row)
+    commit(db)
+    return {
+        "id": row.id,
+        "course_id": row.course_id,
+        "name": row.name,
+        "room": getattr(row, "room", None),
+        "course_code": db.get(Course, row.course_id).code,
+        "roster_frozen": False,
+    }
 
 
 @router.put("/sections/{key}")
 def update_section(key: int, body: SectionIn, db: DB, admin: Admin) -> dict:
     row = require_row(db, Section, key)
     require_row(db, Course, body.course_id)
-    if row.course_id != body.course_id: roster_unlocked(db, key)
+    if row.course_id != body.course_id:
+        roster_unlocked(db, key)
+    if row.course_id != body.course_id or row.name != body.name:
+        existing = db.scalar(select(Section).where(Section.course_id == body.course_id, Section.name == body.name, Section.id != key))
+        if existing:
+            raise HTTPException(409, f"Section '{body.name}' already exists for this course")
     row.course_id, row.name = body.course_id, body.name
+    if hasattr(row, "room"):
+        row.room = body.room
     commit(db)
-    return {"id": key, **body.model_dump()}
+    has_sessions = bool(db.scalar(select(ClassSession.id).where(ClassSession.section_id == key).limit(1)))
+    return {
+        "id": key,
+        "course_id": row.course_id,
+        "name": row.name,
+        "room": getattr(row, "room", None),
+        "course_code": db.get(Course, row.course_id).code,
+        "roster_frozen": has_sessions,
+    }
 
 
 @router.delete("/sections/{key}")
 def delete_section(key: int, db: DB, admin: Admin) -> dict:
     db.delete(require_row(db, Section, key)); commit(db)
     return {"deleted": True}
+
+
+@router.get("/sections/{section_id}/roster")
+def section_roster(section_id: int, db: DB, user: Current) -> list:
+    section_access(db, user, section_id)
+    from ..models import Consent, FaceEmbedding
+    consented_students = set(db.scalars(select(Consent.student_id).where(Consent.revoked_at.is_(None))))
+    embedding_counts = dict(db.execute(select(FaceEmbedding.student_id, func.count(FaceEmbedding.id)).group_by(FaceEmbedding.student_id)).fetchall())
+    poses_map = {}
+    for sid, pose in db.execute(select(FaceEmbedding.student_id, FaceEmbedding.pose_label)).fetchall():
+        poses_map.setdefault(sid, set()).add(pose)
+
+    students = db.scalars(
+        select(User)
+        .join(Enrolment, Enrolment.student_id == User.id)
+        .where(Enrolment.section_id == section_id)
+        .order_by(User.name)
+    ).all()
+
+    out = []
+    for s in students:
+        count = embedding_counts.get(s.id, 0)
+        poses = poses_map.get(s.id, set())
+        complete = count >= 5 and {"front", "left", "right", "up", "down"}.issubset(poses)
+        out.append({
+            "id": s.id,
+            "name": s.name,
+            "email": s.email,
+            "student_code": s.student_code,
+            "department": s.department,
+            "batch": s.batch,
+            "status": getattr(s, "status", "approved"),
+            "biometric_enrolled": complete,
+            "biometric_samples": count,
+            "biometric_consented": s.id in consented_students,
+        })
+    return out
 
 
 @router.get("/enrolments")
@@ -151,6 +247,8 @@ def enrolments(db: DB, admin: Admin) -> list:
 def create_enrolment(body: EnrolmentIn, db: DB, admin: Admin) -> dict:
     with mutation_lock:
         validate_link(db, body, "student"); roster_unlocked(db, body.section_id)
+        if db.get(Enrolment, (body.student_id, body.section_id)) is not None:
+            raise HTTPException(409, "Student is already enrolled in this section")
         db.add(Enrolment(**body.model_dump())); commit(db)
     return body.model_dump()
 
@@ -181,6 +279,8 @@ def assignments(db: DB, admin: Admin) -> list:
 @router.post("/teacher-assignments", status_code=201)
 def create_assignment(body: AssignmentIn, db: DB, admin: Admin) -> dict:
     validate_link(db, body, "teacher")
+    if db.get(TeacherAssignment, (body.teacher_id, body.section_id)) is not None:
+        raise HTTPException(409, "Teacher is already assigned to this section")
     db.add(TeacherAssignment(**body.model_dump())); commit(db)
     return body.model_dump()
 

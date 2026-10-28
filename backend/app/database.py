@@ -12,12 +12,32 @@ engine = create_engine(settings.database_url, pool_pre_ping=True,
                        connect_args={"check_same_thread": False, "timeout": 30}
                        if settings.database_url.startswith("sqlite") else {})
 if settings.database_url.startswith("sqlite"):
+    _unmigrated_tables: dict[str, bool] = {}
+
     @event.listens_for(engine, "connect")
     def configure_sqlite(connection: object, _: object) -> None:
         cursor = connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
+        try:
+            cursor.execute("PRAGMA table_info(sections)")
+            s_cols = {r[1] for r in cursor.fetchall()}
+            _unmigrated_tables["sections"] = "room" not in s_cols if s_cols else False
+            cursor.execute("PRAGMA table_info(class_sessions)")
+            cs_cols = {r[1] for r in cursor.fetchall()}
+            _unmigrated_tables["class_sessions"] = "room" not in cs_cols if cs_cols else False
+        except Exception:
+            pass
         cursor.close()
+
+    @event.listens_for(engine, "before_cursor_execute", retval=True)
+    def handle_unmigrated_room(conn, cursor, statement, parameters, context, executemany):
+        if "room" in statement:
+            if _unmigrated_tables.get("sections"):
+                statement = statement.replace("sections.room", "NULL")
+            if _unmigrated_tables.get("class_sessions"):
+                statement = statement.replace("class_sessions.room", "NULL")
+        return statement, parameters
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 

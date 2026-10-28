@@ -6,7 +6,8 @@ import {
   getPortalUser,
   setPortalAuth,
   clearPortalAuth,
-  isAuthFailure
+  isAuthFailure,
+  formatAccountName
 } from '../src/api/client.js';
 
 // Mock sessionStorage in node environment for testing scoped storage
@@ -88,4 +89,14 @@ test('WRONG_PORTAL status 403 does not trigger unauthorized logout handler', () 
     }
   };
   assert.equal(isAuthFailure(wrongPortalError), false);
+});
+
+test('formatAccountName displays Administrator for seeded default and preserves custom names', () => {
+  assert.equal(formatAccountName('DEMO Administrator'), 'Administrator');
+  assert.equal(formatAccountName('Dr. Sarah Rahman'), 'Dr. Sarah Rahman');
+  assert.equal(formatAccountName('DEMO Student 1'), 'DEMO Student 1');
+  assert.equal(formatAccountName('DEMO Teacher 1'), 'DEMO Teacher 1');
+  assert.equal(formatAccountName(''), '');
+  assert.equal(formatAccountName(null), '');
+  assert.equal(formatAccountName(undefined), '');
 });

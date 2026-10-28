@@ -13,7 +13,7 @@ from ..services.locks import mutation_lock
 router = APIRouter(prefix="/enrol", tags=["enrolment"])
 POSES = {"front", "left", "right", "up", "down"}
 CONSENT_TEXT = ("I voluntarily consent to encrypted face embeddings being used for the PUB AttendEye "
-                "hackathon attendance demonstration. Raw enrolment photos are not saved. Temporary "
+                "academic attendance verification system. Raw enrolment photos are not saved. Temporary "
                 "encrypted review crops may be retained for up to 24 hours. I can withdraw and delete "
                 "my biometric data at any time; a manual attendance alternative is available.")
 

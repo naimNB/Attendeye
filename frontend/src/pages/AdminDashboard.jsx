@@ -66,7 +66,7 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       {/* 1. Header */}
       <Heading
-        title={`Welcome, ${user?.name || 'Administrator'}`}
+        title="Administration Dashboard"
         date={todayFormatted}
         detail="Institutional Governance · Academic Rosters, Identity Verification & Thresholds"
       >
@@ -144,7 +144,7 @@ export default function AdminDashboard() {
             detail="Instructor accounts"
             badge={<Badge variant="info">FACULTY</Badge>}
             icon={
-              <svg className="h-5 w-5 text-pine" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-teal-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             }
@@ -201,7 +201,7 @@ export default function AdminDashboard() {
               <span className="badge bg-amber-100 text-amber-900 border border-amber-300">
                 Approvals
               </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
+              <span className="text-xs font-semibold text-teal-700 group-hover:translate-x-1 transition-transform">
                 Open →
               </span>
             </div>
@@ -224,7 +224,7 @@ export default function AdminDashboard() {
               <span className="badge bg-purple-100 text-purple-900 border border-purple-300">
                 Accounts
               </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
+              <span className="text-xs font-semibold text-teal-700 group-hover:translate-x-1 transition-transform">
                 Open →
               </span>
             </div>
@@ -247,7 +247,7 @@ export default function AdminDashboard() {
               <span className="badge bg-blue-100 text-blue-900 border border-blue-300">
                 Academics
               </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
+              <span className="text-xs font-semibold text-teal-700 group-hover:translate-x-1 transition-transform">
                 Open →
               </span>
             </div>
@@ -270,7 +270,7 @@ export default function AdminDashboard() {
               <span className="badge bg-emerald-100 text-emerald-900 border border-emerald-300">
                 Rosters
               </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
+              <span className="text-xs font-semibold text-teal-700 group-hover:translate-x-1 transition-transform">
                 Open →
               </span>
             </div>
@@ -293,7 +293,7 @@ export default function AdminDashboard() {
               <span className="badge bg-teal-100 text-teal-900 border border-teal-300">
                 Policies
               </span>
-              <span className="text-xs font-semibold text-pine group-hover:translate-x-1 transition-transform">
+              <span className="text-xs font-semibold text-teal-700 group-hover:translate-x-1 transition-transform">
                 Open →
               </span>
             </div>
@@ -315,7 +315,7 @@ export default function AdminDashboard() {
           <section className="card space-y-4 lg:col-span-2">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-base font-bold text-pine">
+                <h3 className="text-base font-bold text-slate-900">
                   Active Recognition & Attendance Policies
                 </h3>
                 <p className="text-xs text-slate-500">
@@ -332,7 +332,7 @@ export default function AdminDashboard() {
                 <span className="text-xs font-semibold text-slate-500 block">
                   Verification Threshold
                 </span>
-                <span className="text-2xl font-extrabold text-pine mt-1 block">
+                <span className="text-2xl font-extrabold text-teal-800 mt-1 block">
                   {settings.verification_threshold ?? '—'}
                 </span>
                 <span className="text-[11px] text-slate-500 block mt-1 leading-snug">
@@ -374,7 +374,7 @@ export default function AdminDashboard() {
         {/* Liveness Engine Status Card (1 col) */}
         <section className="card space-y-4">
           <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-base font-bold text-pine">Liveness & Security Engine</h3>
+            <h3 className="text-base font-bold text-slate-900">Liveness & Security Engine</h3>
             <p className="text-xs text-slate-500">Active server-side anti-spoofing backend</p>
           </div>
 

@@ -13,22 +13,37 @@ from ..config import settings
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-def session_dict(row: ClassSession) -> dict:
-    return {"id": row.id, "section_id": row.section_id, "teacher_id": row.teacher_id,
-            "starts_at": row.starts_at.isoformat() + "Z", "ends_at": row.ends_at.isoformat() + "Z",
-            "status": row.status, "require_qr": row.require_qr, "is_demo": row.is_demo}
+def session_dict(row: ClassSession, db: DB | None = None) -> dict:
+    room = getattr(row, "room", None)
+    if room is None and db is not None:
+        sec = db.get(Section, row.section_id)
+        room = getattr(sec, "room", None) if sec else None
+    return {
+        "id": row.id,
+        "section_id": row.section_id,
+        "teacher_id": row.teacher_id,
+        "room": room,
+        "starts_at": row.starts_at.isoformat() + "Z",
+        "ends_at": row.ends_at.isoformat() + "Z",
+        "status": row.status,
+        "require_qr": row.require_qr,
+        "is_demo": row.is_demo,
+    }
 
 
 @router.post("", status_code=201)
 def create(body: SessionIn, db: DB, teacher: Teacher) -> dict:
     with mutation_lock:
-        section_access(db, teacher, body.section_id)
+        sec = section_access(db, teacher, body.section_id)
         if body.ends_at <= now(): raise HTTPException(422, "End time must be in the future")
         if not db.scalar(select(Enrolment.student_id).where(Enrolment.section_id == body.section_id).limit(1)):
             raise HTTPException(409, "Add the class roster before creating a session")
-        row = ClassSession(**body.model_dump(), teacher_id=teacher.id)
+        session_room = body.room if body.room is not None else getattr(sec, "room", None)
+        data = body.model_dump()
+        data["room"] = session_room
+        row = ClassSession(**data, teacher_id=teacher.id)
         db.add(row); db.commit()
-    return session_dict(row)
+    return session_dict(row, db)
 
 
 @router.get("")
@@ -36,12 +51,12 @@ def listing(db: DB, teacher: Teacher) -> list:
     query = select(ClassSession)
     if teacher.role == "teacher":
         query = query.where(ClassSession.section_id.in_(select(TeacherAssignment.section_id).where(TeacherAssignment.teacher_id == teacher.id)))
-    return [session_dict(row) for row in db.scalars(query.order_by(ClassSession.starts_at.desc()))]
+    return [session_dict(row, db) for row in db.scalars(query.order_by(ClassSession.starts_at.desc()))]
 
 
 @router.get("/{session_id}")
 def detail(session_id: int, db: DB, teacher: Teacher) -> dict:
-    return {**session_dict(session_access(db, teacher, session_id)), "debug_available": settings.debug and teacher.role == "teacher"}
+    return {**session_dict(session_access(db, teacher, session_id), db), "debug_available": settings.debug and teacher.role == "teacher"}
 
 
 @router.get("/{session_id}/roster")

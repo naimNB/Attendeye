@@ -97,7 +97,7 @@ function ReviewCard({ item, roster, resolve, busy }) {
                       type="button"
                       className={`text-xs px-2.5 py-1.5 rounded-lg font-medium transition ${
                         isSelected
-                          ? 'bg-pine text-white shadow-sm'
+                          ? 'bg-teal-700 text-white shadow-sm'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                       onClick={() => setStudent(String(c.student_id))}
@@ -142,7 +142,7 @@ function ReviewCard({ item, roster, resolve, busy }) {
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
-              className={`btn text-xs py-2 px-4 ${student ? 'bg-pine' : 'danger'}`}
+              className={`btn text-xs py-2 px-4 ${student ? 'bg-teal-700 hover:bg-teal-800 text-white' : 'danger'}`}
               disabled={busy || reason.trim().length < 3}
               onClick={() =>
                 resolve(item.id, {
@@ -405,7 +405,7 @@ export default function SessionDetail() {
             <div className="flex items-center gap-2">
               <Link
                 to="/teacher/sessions"
-                className="text-xs font-semibold text-slate-500 hover:text-pine flex items-center gap-1"
+                className="text-xs font-semibold text-slate-500 hover:text-teal-700 flex items-center gap-1"
               >
                 ← Class Sessions
               </Link>
@@ -414,7 +414,7 @@ export default function SessionDetail() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-pine">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
                 {section ? `${section.course_code} · ${section.name}` : `Class Session #${id}`}
               </h1>
 
@@ -444,6 +444,8 @@ export default function SessionDetail() {
                   {new Date(session.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
                   {new Date(session.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
+                {' · '}
+                Room: <span className="font-medium text-slate-700 font-mono">{session.room || section?.room || '—'}</span>
                 {' · '}
                 Roster: <span className="font-medium text-slate-700">{roster.length} students</span>
               </p>
@@ -502,33 +504,33 @@ export default function SessionDetail() {
           <button
             type="button"
             className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-              tab === 'capture' ? 'bg-pine text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              tab === 'capture' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
             onClick={() => setTab('capture')}
           >
-            📸 Capture Workspace
+            Capture Workspace
           </button>
 
           {session?.require_qr && (
             <button
               type="button"
               className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                tab === 'qr' ? 'bg-pine text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                tab === 'qr' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
               }`}
               onClick={() => setTab('qr')}
             >
-              📱 QR Code Check-in
+              QR Code Check-in
             </button>
           )}
 
           <button
             type="button"
             className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-              tab === 'review' ? 'bg-pine text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              tab === 'review' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
             onClick={() => setTab('review')}
           >
-            ⚖️ Review Queue
+            Review Queue
             {pendingReviews.length > 0 && (
               <span className="ml-1.5 rounded-full bg-amber-200 text-amber-900 px-1.5 py-0.2 text-[10px] font-bold">
                 {pendingReviews.length}
@@ -539,31 +541,31 @@ export default function SessionDetail() {
           <button
             type="button"
             className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-              tab === 'records' ? 'bg-pine text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              tab === 'records' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
             onClick={() => setTab('records')}
           >
-            📋 Attendance Records ({records.length})
+            Attendance Records ({records.length})
           </button>
 
           <button
             type="button"
             className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-              tab === 'reports' ? 'bg-pine text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              tab === 'reports' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
             onClick={() => setTab('reports')}
           >
-            📊 Reports & Export
+            Reports & Export
           </button>
 
           <button
             type="button"
             className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-              tab === 'audit' ? 'bg-pine text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              tab === 'audit' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
             onClick={() => setTab('audit')}
           >
-            🔒 Audit Trail ({audit.length})
+            Audit Trail ({audit.length})
           </button>
         </div>
       </div>
@@ -575,16 +577,16 @@ export default function SessionDetail() {
         <div className="space-y-6">
           {/* Quick Notice if QR Check-in is active */}
           {session?.require_qr && (
-            <div className="card bg-emerald-50/50 border-emerald-200/90 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="card bg-teal-50/60 border-teal-200/90 p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-100 text-pine font-bold text-sm">
+                <div className="grid h-9 w-9 place-items-center rounded-xl bg-teal-100 text-teal-800 font-bold text-sm">
                   QR
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-emerald-950">
+                  <p className="text-xs font-bold text-teal-950">
                     2-Factor QR Check-in Active for this Session
                   </p>
-                  <p className="text-xs text-emerald-800">
+                  <p className="text-xs text-teal-800">
                     Students scan the rotating 30s QR code on mobile while doing facial liveness check.
                   </p>
                 </div>
@@ -592,7 +594,7 @@ export default function SessionDetail() {
               <button
                 type="button"
                 onClick={() => setTab('qr')}
-                className="btn secondary text-xs py-1.5 px-3 bg-white hover:border-emerald-400"
+                className="btn secondary text-xs py-1.5 px-3 bg-white hover:border-teal-400"
               >
                 Display Projector QR Code →
               </button>
@@ -611,23 +613,23 @@ export default function SessionDetail() {
                       type="button"
                       className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
                         captureMode === 'camera'
-                          ? 'bg-white text-pine shadow-sm'
+                          ? 'bg-white text-teal-800 shadow-sm'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                       onClick={() => setCaptureMode('camera')}
                     >
-                      📹 Live Camera Burst
+                      Live Camera Burst
                     </button>
                     <button
                       type="button"
                       className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
                         captureMode === 'photo'
-                          ? 'bg-white text-pine shadow-sm'
+                          ? 'bg-white text-teal-800 shadow-sm'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                       onClick={() => setCaptureMode('photo')}
                     >
-                      🖼️ Classroom Photo
+                      Classroom Photo
                     </button>
                   </div>
 
@@ -643,7 +645,9 @@ export default function SessionDetail() {
                     className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-amber-950 text-xs font-semibold shadow-sm flex items-center gap-2.5 animate-pulse"
                   >
                     <span className="grid h-6 w-6 place-items-center rounded-full bg-amber-200 text-amber-900 shrink-0">
-                      ⚡
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
                     </span>
                     <span>{prompt.instructions}</span>
                   </div>
@@ -689,7 +693,7 @@ export default function SessionDetail() {
                             <span
                               className={`absolute -top-5 left-0 px-1 py-0.2 text-[9px] font-semibold rounded-sm shadow-sm ${tagBg} whitespace-nowrap`}
                             >
-                              {isAuto ? '✓ Matched' : isReview ? '⚠ Review' : '? Unknown'}
+                              {isAuto ? 'Matched' : isReview ? 'Review' : 'Unknown'}
                               {debug && b.score != null && ` (${b.score.toFixed(3)})`}
                             </span>
                           </div>
@@ -788,7 +792,7 @@ export default function SessionDetail() {
               {/* Primary Controls Card */}
               <div className="card space-y-4">
                 <div className="border-b border-slate-100 pb-2.5">
-                  <h2 className="text-base font-bold text-pine">Capture Controls</h2>
+                  <h2 className="text-base font-bold text-slate-900">Capture Controls</h2>
                   <p className="text-xs text-slate-500">
                     Execute computer vision matching against the class roster.
                   </p>
@@ -812,17 +816,17 @@ export default function SessionDetail() {
                     </Field>
                     {file && (
                       <p className="text-xs text-emerald-800 font-medium">
-                        ✓ Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                        Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)
                       </p>
                     )}
                   </div>
                 )}
 
                 {/* Consent Confirmation Checkbox */}
-                <label className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-950 cursor-pointer">
+                <label className="flex items-start gap-2.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3 text-xs text-teal-950 cursor-pointer">
                   <input
                     type="checkbox"
-                    className="mt-0.5 rounded border-emerald-400 text-pine focus:ring-emerald-500"
+                    className="mt-0.5 rounded border-teal-400 text-teal-700 focus:ring-teal-600"
                     checked={consent}
                     onChange={e => setConsent(e.target.checked)}
                   />
@@ -841,7 +845,7 @@ export default function SessionDetail() {
                       type="checkbox"
                       checked={debug}
                       onChange={e => setDebug(e.target.checked)}
-                      className="rounded border-slate-300 text-pine focus:ring-emerald-500"
+                      className="rounded border-slate-300 text-teal-700 focus:ring-teal-600"
                     />
                     <span>Teacher Debug: display raw cosine scores & margins</span>
                   </label>
@@ -893,7 +897,7 @@ export default function SessionDetail() {
               {result && (
                 <div className="card space-y-4 border-emerald-200/80 bg-white">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                    <h2 className="text-sm font-bold text-pine">Capture Results</h2>
+                    <h2 className="text-sm font-bold text-slate-900">Capture Results</h2>
                     <span className="text-[11px] font-mono text-slate-500">
                       {(result.elapsed_ms / 1000).toFixed(2)}s elapsed
                     </span>
@@ -926,7 +930,10 @@ export default function SessionDetail() {
                             key={a.student_id}
                             className="inline-flex items-center gap-1 rounded-md bg-emerald-100 text-emerald-900 px-2 py-0.5 text-xs font-medium"
                           >
-                            ✓ {a.name}
+                            <svg className="h-3 w-3 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                            </svg>
+                            {a.name}
                             {a.votes != null && <span className="opacity-75 font-mono">({a.votes}v)</span>}
                           </span>
                         ))}
@@ -961,7 +968,7 @@ export default function SessionDetail() {
       {tab === 'qr' && (
         <section className="card space-y-6">
           <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-lg font-bold text-pine">2-Factor Rotating QR Check-in</h2>
+            <h2 className="text-lg font-bold text-slate-900">2-Factor Rotating QR Check-in</h2>
             <p className="text-xs text-slate-500">
               Project this high-contrast QR code on the lecture screen. Students scan it from their mobile Student Portal.
             </p>
@@ -1031,14 +1038,14 @@ export default function SessionDetail() {
         <div className="space-y-4">
           <div className="card border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-pine">Human Verification Queue</h2>
+              <h2 className="text-base font-bold text-slate-900">Human Verification Queue</h2>
               <p className="text-xs text-slate-500">
                 Low-confidence face detections, multiple candidate ambiguities, and unrecognized persons.
               </p>
             </div>
-            <span className="badge badge-review">
+            <Badge variant="review">
               {pendingReviews.length} pending / {reviews.length} total
-            </span>
+            </Badge>
           </div>
 
           {reviews.length > 0 ? (
@@ -1069,7 +1076,7 @@ export default function SessionDetail() {
         <section className="card space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-base font-bold text-pine">Section Attendance Records</h2>
+              <h2 className="text-base font-bold text-slate-900">Section Attendance Records</h2>
               <p className="text-xs text-slate-500">
                 Finalized and in-progress attendance records for this session.
               </p>
@@ -1136,7 +1143,7 @@ export default function SessionDetail() {
       {tab === 'reports' && (
         <section className="card space-y-4">
           <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-base font-bold text-pine">Export Attendance Reports</h2>
+            <h2 className="text-base font-bold text-slate-900">Export Attendance Reports</h2>
             <p className="text-xs text-slate-500">
               Download authenticated university attendance records for academic records and auditing.
             </p>
@@ -1216,7 +1223,7 @@ export default function SessionDetail() {
       {tab === 'audit' && (
         <section className="card space-y-4">
           <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-base font-bold text-pine">Immutable Audit Log</h2>
+            <h2 className="text-base font-bold text-slate-900">Immutable Audit Log</h2>
             <p className="text-xs text-slate-500">
               Cryptographic and database audit history of all manual attendance corrections.
             </p>
@@ -1230,7 +1237,7 @@ export default function SessionDetail() {
                     <span className="font-bold text-slate-900">
                       Record #{a.record_id}:{' '}
                       <span className="text-slate-500 font-normal">{a.old_status || 'none'}</span> →{' '}
-                      <span className="text-pine font-bold">{a.new_status}</span>
+                      <span className="text-teal-800 font-bold">{a.new_status}</span>
                     </span>
                     <span className="text-slate-400 font-mono">
                       {new Date(a.created_at).toLocaleString()}

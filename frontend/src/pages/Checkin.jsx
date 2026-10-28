@@ -105,7 +105,7 @@ export default function Checkin() {
         );
 
         // Step 4: Submit ticket, challenge, and frames for verification
-        setPhase('Verifying facial biometrics, motion liveness, and ticket ticket binding…');
+        setPhase('Verifying facial biometrics, motion liveness, and ticket binding…');
         const body = new FormData();
         body.append('ticket_token', ticketData.ticket_token);
         body.append('challenge_token', ticketData.challenge_token);
@@ -137,7 +137,7 @@ export default function Checkin() {
           setCustomError('Classroom QR code has expired (the teacher screen rotates every 30 seconds). Please scan the current code displayed in class.');
         } else if (msg.includes('ticket') || msg.includes('expired')) {
           setCustomError('Security ticket window timed out. Please retry with the latest classroom code.');
-        } else if (msg.includes('enrolment')) {
+        } else if (msg.includes('enrolment') || msg.includes('consented')) {
           setCustomError('You must complete face enrolment before participating in QR check-in.');
         } else if (msg.includes('Already checked in')) {
           setCustomError('You are already checked in and marked present for this session.');
@@ -161,8 +161,8 @@ export default function Checkin() {
           detail="Scan the live 30-second classroom QR code, then execute your 2-factor liveness challenge."
         />
         {livenessStatus && (
-          <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-700 border-slate-200">
-            Liveness: <strong className="text-emerald-800">{livenessStatus.active_backend.toUpperCase()}</strong>
+          <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border bg-white text-slate-700 border-slate-200">
+            Liveness Engine: <strong className="text-teal-800">{livenessStatus.active_backend.toUpperCase()}</strong>
           </span>
         )}
       </div>
@@ -171,25 +171,25 @@ export default function Checkin() {
 
       {/* SUCCESS CONFIRMATION CARD */}
       {success && successDetails && (
-        <section className="card border-emerald-300 bg-emerald-50/80 p-6 space-y-4 shadow-sm animate-in fade-in duration-200">
+        <section className="card border-teal-300 bg-teal-50/70 p-6 space-y-4 shadow-sm animate-in fade-in duration-200">
           <div className="flex items-start gap-4">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-emerald-600 text-white shrink-0 shadow-xs">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-700 text-white shrink-0 shadow-xs">
               <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
               </svg>
             </div>
             <div className="space-y-1">
-              <h2 className="text-lg font-bold text-emerald-950">Attendance Successfully Recorded!</h2>
-              <p className="text-xs text-emerald-900 leading-relaxed">
+              <h2 className="text-lg font-bold text-teal-950">Attendance Successfully Recorded!</h2>
+              <p className="text-xs text-teal-900 leading-relaxed">
                 You have been authenticated and marked <strong>PRESENT</strong> for Session #{successDetails.sessionId} at {successDetails.timestamp}.
               </p>
-              <p className="text-[11px] text-emerald-800">
-                Two-factor verification sealed: Rotating QR token + live facial motion verification confirmed.
+              <p className="text-[11px] text-teal-800">
+                Two-factor verification completed: Rotating QR token + live facial motion verification confirmed.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-2 border-t border-emerald-200">
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-teal-200">
             <Link to="/student/dashboard" className="btn text-xs py-2 px-4">
               Return to Dashboard →
             </Link>
@@ -204,31 +204,39 @@ export default function Checkin() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
         <div
           className={`rounded-xl p-3 border transition-all ${
-            isStep1Done ? 'bg-mint/60 border-emerald-300' : 'bg-slate-50 border-slate-200'
+            isStep1Done ? 'bg-teal-50/80 border-teal-300' : 'bg-slate-50 border-slate-200'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-700">1. Classroom Code</span>
+            <span className="font-bold text-slate-800">1. Classroom Code</span>
             {isStep1Done ? (
-              <span className="text-emerald-700 font-bold">✓</span>
+              <span className="text-teal-700 font-bold" aria-label="Completed">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
             ) : (
               <span className="text-slate-400">Step 1</span>
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            {isStep1Done ? `Session #${sessionId} Ready` : 'Scan or paste'}
+            {isStep1Done ? `Session #${sessionId} Ready` : 'Scan or enter'}
           </p>
         </div>
 
         <div
           className={`rounded-xl p-3 border transition-all ${
-            isStep2Done ? 'bg-mint/60 border-emerald-300' : 'bg-slate-50 border-slate-200'
+            isStep2Done ? 'bg-teal-50/80 border-teal-300' : 'bg-slate-50 border-slate-200'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-700">2. Face Camera</span>
+            <span className="font-bold text-slate-800">2. Face Camera</span>
             {isStep2Done ? (
-              <span className="text-emerald-700 font-bold">✓</span>
+              <span className="text-teal-700 font-bold" aria-label="Completed">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
             ) : (
               <span className="text-slate-400">Step 2</span>
             )}
@@ -240,212 +248,185 @@ export default function Checkin() {
 
         <div
           className={`rounded-xl p-3 border transition-all ${
-            prompt ? 'bg-amber-100 border-amber-300 ring-2 ring-amber-400/20' : 'bg-slate-50 border-slate-200'
+            ticketTimeLeft !== null ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-700">3. Live Challenge</span>
+            <span className="font-bold text-slate-800">3. Ticket Window</span>
             {ticketTimeLeft !== null ? (
-              <span className="text-amber-800 font-bold font-mono">{ticketTimeLeft}s</span>
+              <span className="font-mono font-bold text-amber-900 text-xs">{ticketTimeLeft}s</span>
             ) : (
-              <span className="text-slate-400">Step 3</span>
+              <span className="text-slate-400">15s Limit</span>
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            {prompt ? 'Challenge Active' : 'Pose / blink check'}
+            {ticketTimeLeft !== null ? `${ticketTimeLeft}s remaining` : 'Bound to session'}
           </p>
         </div>
 
         <div
           className={`rounded-xl p-3 border transition-all ${
-            success ? 'bg-mint/80 border-emerald-400' : 'bg-slate-50 border-slate-200'
+            success ? 'bg-teal-50/80 border-teal-300' : 'bg-slate-50 border-slate-200'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-700">4. Verified</span>
+            <span className="font-bold text-slate-800">4. Presence Seal</span>
             {success ? (
-              <span className="text-emerald-700 font-bold">✓</span>
+              <span className="text-teal-700 font-bold" aria-label="Completed">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
             ) : (
-              <span className="text-slate-400">Step 4</span>
+              <span className="text-slate-400">Final Step</span>
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            {success ? 'Marked Present' : 'Pending check-in'}
+            {success ? 'Marked Present' : 'Verified match'}
           </p>
         </div>
       </div>
 
-      {/* STEP 1 CARD: QR CODE SCAN / INPUT */}
-      <section className="card space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-base font-bold text-pine flex items-center gap-2">
-              <span className="grid h-6 w-6 place-items-center rounded-lg bg-emerald-100 text-pine text-xs font-bold">
-                1
-              </span>
-              Classroom QR Code or Session Token
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Point your phone camera at the projected code, or manually paste the session token.
+      {/* Main Check-in Workspace */}
+      <div className="grid gap-6 lg:grid-cols-12 items-start">
+        {/* Left Column: QR Scan & Code Inputs (5 cols) */}
+        <div className="card space-y-4 lg:col-span-5 bg-white">
+          <div className="border-b border-slate-100 pb-2.5">
+            <h2 className="text-sm font-bold text-slate-900">1. Classroom QR Token</h2>
+            <p className="text-xs text-slate-500">
+              Obtain the 30-second rotating code from your teacher's projector or screen.
             </p>
           </div>
 
-          <button
-            type="button"
-            className={`btn text-xs py-2 px-3.5 ${scan ? 'danger' : 'secondary'}`}
-            onClick={() => setScan(!scan)}
-          >
-            {scan ? 'Close Rear Camera Scanner' : '📷 Open Camera QR Scanner'}
-          </button>
-        </div>
-
-        {/* Real-time HTML5 Camera QR Scanner */}
-        {scan && (
-          <div className="p-2 bg-slate-900 rounded-2xl">
-            <QRScanner
-              onScan={decoded => {
-                parseQRData(decoded);
-                setScan(false);
-              }}
-              onClose={() => setScan(false)}
-            />
-          </div>
-        )}
-
-        {/* Input Fields */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <Field title="Session ID" hint="Required" required>
+          <div className="space-y-3">
+            <Field title="Session Number" hint="e.g. 1, 2" required>
               <input
                 type="number"
                 min="1"
+                required
                 value={sessionId}
                 onChange={e => setSessionId(e.target.value)}
-                placeholder="e.g. 22"
-                className="text-xs font-mono"
+                placeholder="Enter Session ID"
               />
             </Field>
-          </div>
 
-          <div className="sm:col-span-2">
-            <Field title="Session Token / Scanned JSON" hint="30-second signed JWT token" required>
+            <Field title="QR Security Token" hint="From rotating classroom code" required>
               <input
                 type="text"
+                required
                 value={code}
-                onChange={e => parseQRData(e.target.value)}
-                placeholder="Paste code or JSON from QR code..."
-                className="text-xs font-mono"
+                onChange={e => setCode(e.target.value)}
+                placeholder="Paste token or scan barcode"
               />
             </Field>
-          </div>
-        </div>
 
-        {isStep1Done && (
-          <p className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
-            <span>✓</span>
-            Classroom credentials loaded for Session #{sessionId}.
-          </p>
-        )}
-      </section>
-
-      {/* STEP 2 & 3 CARD: FACE CAMERA & LIVENESS CHALLENGE */}
-      <section className="card space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-base font-bold text-pine flex items-center gap-2">
-              <span className="grid h-6 w-6 place-items-center rounded-lg bg-emerald-100 text-pine text-xs font-bold">
-                2
-              </span>
-              Front Face Camera & Challenge
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Hold phone at eye level. When you start, follow the on-screen movement prompt.
-            </p>
-          </div>
-
-          {ticketTimeLeft !== null && (
-            <span
-              className={`text-xs font-mono font-bold px-3 py-1 rounded-full border ${
-                ticketTimeLeft <= 5
-                  ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
-                  : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-              }`}
+            <button
+              type="button"
+              onClick={() => setScan(!scan)}
+              className="btn secondary w-full text-xs py-2 px-4 flex items-center justify-center gap-2"
             >
-              Security Ticket: {ticketTimeLeft}s remaining
-            </span>
-          )}
-        </div>
+              <svg className="h-4 w-4 text-teal-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+              {scan ? 'Close Barcode Scanner' : 'Open Camera to Scan Barcode'}
+            </button>
 
-        {/* Viewfinder */}
-        <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-950 aspect-video max-w-lg mx-auto flex items-center justify-center">
-          {cameraOn ? (
-            <div className="h-full w-full">
-              <Webcam ref={camera} facingMode="user" />
-            </div>
-          ) : (
-            <div className="p-8 text-center space-y-3">
-              <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-900 text-slate-400 border border-slate-800">
-                <svg className="h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
+            {scan && (
+              <div className="rounded-xl border border-slate-200 p-2 bg-slate-50">
+                <QRScanner onScan={parseQRData} />
               </div>
-              <p className="text-xs text-slate-300">Front camera is currently off</p>
-              <button
-                type="button"
-                onClick={() => setCameraOn(true)}
-                className="btn text-xs py-2 px-4 shadow-sm"
-              >
-                Turn On Front Camera
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* Live Challenge Instruction Banner */}
-        {prompt && (
-          <div
-            role="alert"
-            className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 text-xs font-bold shadow-sm flex items-center gap-3 animate-pulse"
-          >
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-amber-200 text-amber-900 shrink-0 text-base">
-              ⚡
-            </span>
-            <div className="space-y-0.5">
-              <p className="uppercase tracking-wider text-[10px] text-amber-800">Challenge Prompt</p>
-              <p className="text-sm">{prompt}</p>
+        {/* Right Column: Camera Viewfinder & Challenge Execution (7 cols) */}
+        <div className="card space-y-4 lg:col-span-7 bg-white">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">2. Liveness Challenge & Verification</h2>
+              <p className="text-xs text-slate-500">
+                Front camera verifies face motion to prevent spoofing or photo-proxy check-ins.
+              </p>
             </div>
+            {ticketTimeLeft !== null && (
+              <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-mono text-xs font-bold px-2.5 py-0.5">
+                Ticket: {ticketTimeLeft}s
+              </span>
+            )}
           </div>
-        )}
 
-        {/* Primary Action Button */}
-        <button
-          type="button"
-          disabled={task.busy || !cameraOn || !sessionId || !code}
-          onClick={handleCheckin}
-          className="btn w-full py-3 text-sm shadow-sm font-bold"
-        >
-          {task.busy ? 'Verifying Challenge & Attendance...' : 'Start Liveness Challenge & Check In'}
-        </button>
+          {/* Viewfinder Screen */}
+          <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-950 aspect-video flex items-center justify-center">
+            {cameraOn ? (
+              <div className="relative h-full w-full">
+                <Webcam ref={camera} facingMode="user" />
 
-        {(!sessionId || !code) && (
-          <p className="text-[11px] text-slate-400 text-center">
-            Scan or enter the classroom QR code in Step 1 to unlock verification.
-          </p>
-        )}
-        {sessionId && code && !cameraOn && (
-          <p className="text-[11px] text-slate-400 text-center">
-            Turn on your front face camera to proceed.
-          </p>
-        )}
+                {/* Challenge Prompt Overlay */}
+                {prompt && (
+                  <div className="absolute inset-x-0 bottom-0 bg-slate-900/90 p-3 text-center border-t border-slate-800">
+                    <p className="text-xs font-bold text-teal-400 uppercase tracking-wider mb-0.5">
+                      Active Challenge:
+                    </p>
+                    <p className="text-sm font-bold text-white">{prompt}</p>
+                    {burstCount !== null && (
+                      <p className="text-[11px] font-mono text-slate-300 mt-1">
+                        Recording frame {burstCount} of {burstTotal}…
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-8 text-center space-y-3">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-900 text-slate-400 border border-slate-800">
+                  <svg className="h-6 w-6 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Camera Offline</p>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto mt-0.5">
+                    Enable camera to prepare for the 2-factor facial motion verification.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCameraOn(true)}
+                  className="btn text-xs py-2 px-4 shadow-sm"
+                >
+                  Enable Camera
+                </button>
+              </div>
+            )}
+          </div>
 
-        {/* Honest Progress Tracker */}
-        <Progress
-          busy={task.busy}
-          label={phase}
-          count={burstCount}
-          total={burstTotal}
-        />
-      </section>
+          {/* Action Trigger */}
+          <div className="space-y-3 pt-1">
+            <button
+              type="button"
+              disabled={!isStep1Done || !cameraOn || task.busy}
+              onClick={handleCheckin}
+              className="btn w-full py-3 text-xs font-bold shadow-sm"
+            >
+              {task.busy ? 'Executing Liveness Challenge…' : 'Start 2-Factor Verification →'}
+            </button>
+
+            {!isStep1Done && (
+              <p className="text-[11px] text-slate-400 text-center">
+                Enter or scan the classroom session number and code on the left to activate verification.
+              </p>
+            )}
+
+            {phase && (
+              <p className="text-xs font-medium text-teal-900 bg-teal-50 border border-teal-200 rounded-lg p-2.5 text-center">
+                {phase}
+              </p>
+            )}
+
+            <Progress busy={task.busy} label={phase || 'Processing check-in on server…'} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

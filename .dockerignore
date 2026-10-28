@@ -1,0 +1,43 @@
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Databases and local runtime data
+*.db
+*.db-*
+*.sqlite*
+backend/attendeye.db*
+backend/private/
+backend/data/
+
+# Model binaries (mounted read-only at runtime from host)
+backend/models/insightface/models/
+backend/models/*.onnx
+backend/models/*.zip
+
+# Evaluation artifacts and test caches
+evaluation/
+dataset/
+.pytest_cache/
+tests/__pycache__/
+backend/tests/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+backend/.venv/
+
+# Node and frontend build outputs
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Git and OS metadata
+.git
+.gitignore
+.github
+.DS_Store
+Thumbs.db

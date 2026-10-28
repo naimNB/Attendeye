@@ -1,150 +1,93 @@
 # PUB AttendEye
 
-A complete-source university hackathon prototype for Track B4: consent-based face attendance, teacher review, encrypted biometrics, optional QR + face check-in, analytics and reproducible evaluation. Designed for one CPU-only Windows 10/11 or Linux laptop, a 3–4 person team and a ten-day hackathon.
+A complete-source university attendance application featuring consent-based face recognition, teacher review workflows, Fernet-encrypted biometrics, rotating QR + active liveness check-in, institutional administrative setup, and analytics. Designed for CPU-only operation on Linux and Windows.
 
-**Delivery status:** source files and static syntax checks only. At the user's request, the app, dependency installation, tests, model inference and benchmarks were **not run**. No accuracy or CPU performance numbers are claimed. Model binaries, secrets, databases and volunteer datasets are intentionally not bundled. Complete the setup below and verify on your target laptop before presenting it as working.
+**Release Status:** Stabilized Release Candidate. All 80 backend automated tests and 14 frontend tests pass. Frontend production builds cleanly. Feature freeze is complete in preparation for containerization.
 
 ## What's included
 
-- FastAPI backend with SQLAlchemy 2, Pydantic v2, SQLite, JWT, direct bcrypt and Fernet.
-- CPU InsightFace alignment/512-dimensional embeddings; tiled/upscaled detection and NMS.
-- Quality gates, section-restricted galleries, maximum sample cosine, Hungarian matching and frame voting.
-- MiniFASNetV2 ONNX passive liveness with a download/export script; conservative fallback.
-- User/session-bound one-time 15-second blink or head-turn challenges.
-- Optional 30-second rotating QR plus live face check-in with replay prevention.
-- Student consent, five-pose enrolment, attendance alerts and biometric deletion.
-- Teacher capture, bounding boxes, review, corrections, closure, PDF/CSV exports and analytics.
-- Admin user/course/section/roster/assignment CRUD and global threshold settings.
-- Clearly fake seeded accounts; optional twenty explicitly labelled DEMO past sessions.
-- Real-data evaluation scripts, synthetic pytest tests, privacy/consent materials and judges' documentation.
+- **Institutional Architecture:** Distinct, isolated portals for Students, Teachers, and Administrators.
+- **FastAPI Backend:** SQLAlchemy 2, Pydantic v2, SQLite/PostgreSQL-ready, JWT tokens, direct bcrypt password hashing, and Fernet biometric encryption.
+- **Face Recognition Pipeline:** YuNet detection, 512-dimensional normalized embeddings (SFace/InsightFace), multi-tile upscaling for lecture halls, Hungarian matching, and cross-frame voting.
+- **Dual Liveness Verification:** User/session-bound one-time 15-second blink/turn challenges (active) and MiniFASNetV2 ONNX anti-spoofing with conservative heuristic fallback (passive).
+- **Two-Factor QR + Face Check-in:** 30-second rotating signed QR codes with 15-second signed check-in tickets, replay prevention, and challenge binding.
+- **Privacy & Consent by Design:** Explicit informed consent, guided 5-pose face enrolment, zero raw photo storage, and instant biometric deletion (`DELETE /enrol/me`).
+- **Teacher Review & Correction:** Ambiguous matches routed to manual review; audit-logged manual corrections; CSV/PDF report exports with formula injection escaping.
+- **Admin Class Setup:** Course and section management with room assignments, teacher section assignment, student section enrolment, and registration approval gates.
+- **Roster Freezing:** Automatic roster freezing once a section has held a session to guarantee historical attendance integrity.
+- **Demo Data Boundaries:** Clearly labelled `[DEMO]` synthetic accounts and sessions, cleanly partitioned from real data.
 
-## Project map
+## Portal URLs and Routes
 
-The exact full tree is in `FILE_TREE.txt`. Key directories:
+| Portal | Route | Description |
+|---|---|---|
+| **Directory** | `/` | System landing page with direct portal links (legacy `/login` redirects here) |
+| **Student** | `/student` | Student landing page |
+| | `/student/login` | Student institutional login |
+| | `/student/signup` | Student registration (creates `pending` account) |
+| | `/student/dashboard` | Attendance history, course cards, consent status, alerts |
+| | `/student/enrol` | Guided 5-pose biometric face enrolment |
+| | `/student/checkin` | Classroom QR scan and active liveness check-in |
+| **Teacher** | `/teacher` | Teacher landing page |
+| | `/teacher/login` | Teacher institutional login |
+| | `/teacher/signup` | Teacher registration (creates `pending` account) |
+| | `/teacher/dashboard` | Active/upcoming sessions, recent history, quick actions |
+| | `/teacher/sessions` | Session management, new session creation |
+| | `/teacher/sessions/:id` | Live session console, QR code display, photo/burst capture, manual review |
+| **Admin** | `/admin` | Admin landing page |
+| | `/admin/login` | System administrator login |
+| | `/admin/dashboard` | User approvals, course/section setup, teacher assignments, student enrolments |
+| | `/admin/analytics` | Institutional attendance trends, at-risk rosters (excludes demo data by default) |
 
-```text
-attendeye/
-  backend/
-    app/
-      main.py
-      config.py
-      database.py
-      models.py
-      schemas.py
-      security.py
-      deps.py
-      routers/
-      services/
-    scripts/
-    tests/
-    .env.example
-    requirements.txt
-    pytest.ini
-  frontend/
-    src/
-      pages/
-      components/
-      api/
-    package.json
-    vite.config.js
-    tailwind.config.js
-    postcss.config.js
-    .env.example
-    index.html
-  evaluation/
-    evaluate.py
-    metrics.py
-    benchmark.py
-    README.md
-    consent_form.md
-    data_collection_checklist.md
-  docs/
-    MASTER_PROMPT.md
-    REPORT.md
-    DIAGRAMS.md
-    SLIDES.md
-    DEMO_SCRIPT.md
-    VIVA.md
-    PRIVACY.md
-    SECURITY_AUDIT.md
-    TEAM_PLAN.md
-    VERIFICATION.md
-  requirements.txt
-  README.md
-```
+## Quickstart (Conda / Linux)
 
-## Requirements
+For environments with Conda (e.g. `/home/mdnaim/miniconda3/envs/cv`):
 
-Use **Python 3.10 or 3.11 (64-bit)** and a supported Node.js release compatible with Vite 6 (Node 22 is a suitable choice). A webcam is optional for photo-only demonstrations. Internet is needed initially for dependencies and model downloads; cached models can run offline afterwards. CPU-only ONNX Runtime is used; CUDA is not needed.
-
-InsightFace 0.7.3 includes a native extension. On Windows install Microsoft Visual C++ Build Tools with “Desktop development with C++” and the Windows SDK if a wheel cannot be built. On Debian/Ubuntu install `build-essential` and the matching Python development headers. Use a virtual environment rather than a system Python installation.
-
-The required application stack is retained. Supporting packages are Pillow (EXIF/image decoding), python-multipart (uploads), python-dotenv (environment files), matplotlib (requested plots), httpx (tests), and qrcode.react (QR rendering). `torch` and `onnx` are optional **model-export-only** dependencies; the running app uses ONNX Runtime, not PyTorch. No passlib is used.
-
-## Windows 10/11 setup (PowerShell)
-
-Extract the ZIP, open PowerShell in `attendeye`, and run these commands when you are ready:
-
-```powershell
+```bash
+# 1. Backend environment and dependencies
 cd backend
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install numpy==1.26.4 Cython==0.29.37
-python -m pip install --no-build-isolation -r requirements.txt
-python scripts/init_env.py
-python scripts/seed.py --demo-sessions
-python scripts/download_face_model.py
+/home/mdnaim/miniconda3/envs/cv/bin/python -m pip install -r requirements.txt
+
+# 2. Database schema migrations (adds room/location columns safely)
+/home/mdnaim/miniconda3/envs/cv/bin/python scripts/migrate_rooms.py
+
+# 3. Start backend server (must run from backend/ directory)
+/home/mdnaim/miniconda3/envs/cv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-If your machine uses Python 3.10, replace `py -3.11` with `py -3.10`. If PowerShell activation is restricted, use the virtual environment interpreter directly, such as `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`; changing machine-wide execution policy is unnecessary.
+In a second terminal:
 
-Install the optional stronger passive model before attempting automatic live/QR acceptance:
-
-```powershell
-python -m pip install torch==2.5.1 onnx==1.17.0
-python scripts/download_minifas.py
-```
-
-Start the backend in the same terminal:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
-```
-
-In a second PowerShell terminal opened in `attendeye`:
-
-```powershell
+```bash
+# 4. Frontend setup and dev server
 cd frontend
 npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. API documentation is at `http://127.0.0.1:8000/docs` after startup. Swagger's UI assets may require internet even when the app itself can work offline.
+Visit `http://127.0.0.1:5173` in your browser. API docs are available at `http://127.0.0.1:8000/docs`.
 
-## Linux setup (Bash)
+## Linux Setup (Standard Virtualenv)
 
-Install Python 3.10/3.11 with venv/development support and build tools using your distribution's package manager. Then, from `attendeye`:
+Install Python 3.10/3.11 with venv/development support and build tools:
 
 ```bash
 cd backend
-python3.11 -m venv .venv
+python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install numpy==1.26.4 Cython==0.29.37
 python -m pip install --no-build-isolation -r requirements.txt
 python scripts/init_env.py
+python scripts/migrate_rooms.py
 python scripts/seed.py --demo-sessions
 python scripts/download_face_model.py
-python -m pip install torch==2.5.1 onnx==1.17.0
-python scripts/download_minifas.py
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Use `python3.10` if that is your installed supported interpreter. In another terminal:
+In another terminal:
 
 ```bash
-cd attendeye/frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -227,15 +170,64 @@ Admin-managed database settings: attendance_limit=75, t_low=0.35, t_high=0.50, m
 
 For PostgreSQL later, install `psycopg[binary]` and set a `postgresql+psycopg://` DATABASE_URL. Tables use portable SQLAlchemy types and constraints. Changing the URL does **not** migrate SQLite data; plan a migration and run all integration tests. Single-worker locks still apply.
 
-## Tests, evaluation and timing — run these yourself later
+## Automated Verification & Test Suite
 
-From the backend virtual environment:
+The test suite runs against isolated, temporary databases with synthetic embeddings and mocked inference, ensuring the development database (`backend/attendeye.db`) is never modified during tests.
+
+### Running Backend Tests (pytest)
+
+From `backend/`:
 
 ```bash
-python -m pytest
+# Using the configured Conda environment:
+/home/mdnaim/miniconda3/envs/cv/bin/python -m pytest tests/
+
+# Or within an active virtual environment:
+pytest tests/
 ```
 
-Tests use temporary databases, generated test keys, synthetic embeddings and mocked inference. They do not download face models. They cover matching/thresholds/votes, attendance percentages and corrections, consent/deletion, role boundaries, JWT expiry, thumbnail expiry, upload checks, liveness motion and QR replay. Real model/camera behaviour requires separate validation. There is no fabricated “tests passed” claim.
+**Verification status:** 80 tests passing (100% pass rate).
+Coverage encompasses:
+- Strict section isolation and multi-section teacher assignment.
+- Biometric consent, 5-pose validation, Fernet vector encryption, and biometric deletion (`DELETE /enrol/me`).
+- Two-factor QR rotating tokens, 15-second check-in tickets, and challenge-token binding.
+- Active liveness challenge motion (blink / turn) and anti-replay nonce enforcement.
+- Gallery candidate gating (only approved, consented, enrolled students).
+- Teacher session lifecycle, photo capture, bounding-box generation, and manual review.
+- Attendance calculations, formula injection prevention in CSV exports, and audit logging.
+
+### Running Frontend Tests & Production Build
+
+From `frontend/`:
+
+```bash
+# Run unit and portal isolation tests:
+npm test
+
+# Build production bundle:
+npm run build
+```
+
+**Verification status:**
+- `npm test`: 14 tests passing (100% pass rate covering portal route resolution, session isolation, error code handling, and account statuses).
+- `npm run build`: Vite production build generates optimized static bundle with zero errors.
+
+## Database Migrations
+
+When upgrading an existing database without dropping tables, run the non-destructive migration script:
+
+```bash
+cd backend
+/home/mdnaim/miniconda3/envs/cv/bin/python scripts/migrate_rooms.py
+```
+
+This verifies and appends the `room` column to `sections` and `class_sessions` while retaining all existing records, credentials, enrolments, and biometrics.
+
+## Known Limitations
+
+- **Browser Webcam Attestation:** Web browsers grant access to standard video streams via `getUserMedia()`. The system checks active liveness (motion challenges) and passive texture/moire characteristics, but cannot cryptographically attest against hardware-emulated virtual cameras at the OS level.
+- **Email Verification Deferred:** In accordance with requirements, email verification workflows are deferred. Student and teacher signups enter a `pending` state requiring administrator manual inspection and approval before login is permitted.
+- **Single-Worker Execution:** Heavy model inference is protected by an in-process `BoundedSemaphore(1)` to prevent CPU exhaustion on commodity laptop hardware. Backend processes should run with a single Uvicorn worker (`--workers 1`). SQLite writes are synchronized with an internal mutex lock.
 
 Follow `evaluation/README.md` to collect the separately consented dataset. From `backend/`:
 

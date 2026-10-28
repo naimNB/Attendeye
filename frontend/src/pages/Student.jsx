@@ -21,8 +21,8 @@ export default function Student() {
     setLoading(true);
     await task.run(async () => {
       const [a, n] = await Promise.all([
-        api.get('/attendance/me'),
-        api.get('/notifications'),
+        api.get('/attendance/me').catch(() => ({ data: [] })),
+        api.get('/notifications').catch(() => ({ data: [] })),
       ]);
       setData(a.data || []);
       setNotes(n.data || []);
@@ -52,11 +52,11 @@ export default function Student() {
       {/* Page Header */}
       <Heading
         title="My Attendance Records"
-        detail="Course-by-course attendance percentage and compliance across closed class sessions."
+        detail="Course-by-course attendance compliance calculated across finalized class sessions."
       >
         <Link
           to="/student/checkin"
-          className="btn shadow-sm text-xs py-2 px-4 font-bold flex items-center gap-2"
+          className="btn text-xs py-2 px-4 shadow-sm"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
@@ -69,18 +69,18 @@ export default function Student() {
 
       {/* Threshold Warning Banner */}
       {belowLimitCount > 0 && (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-amber-950 shadow-sm flex items-start gap-3.5">
-          <div className="grid h-8 w-8 place-items-center rounded-xl bg-amber-200 text-amber-900 shrink-0 mt-0.5">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-4 text-amber-950 shadow-xs flex items-start gap-3.5">
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-amber-200 text-amber-900 shrink-0 mt-0.5">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
           <div className="space-y-1">
-            <p className="font-bold text-sm">Attendance Compliance Notice</p>
-            <p className="text-xs text-amber-900/90 leading-relaxed">
-              You are currently below the university attendance threshold in <strong>{belowLimitCount} course section(s)</strong>.
-              Students below {defaultLimit}% at term end may be disqualified from taking final course examinations.
-              If you have documented excused absences, please request manual correction from your instructor.
+            <p className="font-bold text-sm text-amber-950">Attendance Compliance Notice</p>
+            <p className="text-xs text-amber-900 leading-relaxed">
+              You are currently below the university threshold in <strong>{belowLimitCount} course section(s)</strong>.
+              Students below {defaultLimit}% at the end of the term may be disqualified from sitting final examinations.
+              If you have documented excused absences, please request manual review from your instructor.
             </p>
           </div>
         </div>
@@ -97,7 +97,7 @@ export default function Student() {
             detail="Active academic sections on your roster"
             badge={<Badge variant="info">ENROLLED</Badge>}
             icon={
-              <svg className="h-5 w-5 text-pine" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-teal-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             }
@@ -124,7 +124,7 @@ export default function Student() {
               )
             }
             icon={
-              <svg className="h-5 w-5 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-teal-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             }
@@ -134,7 +134,7 @@ export default function Student() {
             title="Attendance Limit"
             value={`${defaultLimit}%`}
             detail="Official institutional threshold"
-            badge={<Badge variant="neutral">UNIVERSITY POLICY</Badge>}
+            badge={<Badge variant="neutral">POLICY</Badge>}
             icon={
               <svg className="h-5 w-5 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -146,8 +146,8 @@ export default function Student() {
 
       {/* Course Attendance Breakdown Cards */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
-          <h2 className="text-base font-bold text-pine">Course Sections</h2>
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+          <h2 className="text-base font-bold text-slate-900">Course Sections</h2>
           <span className="text-xs font-semibold text-slate-500">
             {data.length} course{data.length !== 1 ? 's' : ''}
           </span>
@@ -164,13 +164,13 @@ export default function Student() {
               return (
                 <div
                   key={d.section_id}
-                  className={`card card-hover flex flex-col justify-between space-y-4 ${
+                  className={`card flex flex-col justify-between space-y-4 ${
                     isBelow ? 'border-amber-300 bg-amber-50/20' : ''
                   }`}
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="badge bg-emerald-100/90 text-emerald-900 border border-emerald-200 font-mono font-bold">
+                      <span className="badge badge-info font-mono font-bold">
                         {d.course}
                       </span>
                       <Badge variant={isBelow ? 'expired' : hasPercentage ? 'live' : 'neutral'}>
@@ -191,7 +191,7 @@ export default function Student() {
                           isBelow
                             ? 'text-amber-800'
                             : hasPercentage
-                            ? 'text-pine'
+                            ? 'text-teal-800'
                             : 'text-slate-400'
                         }`}
                       >
@@ -206,17 +206,17 @@ export default function Student() {
                     <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                       <div
                         className={`h-full rounded-full transition-all duration-300 ${
-                          isBelow ? 'bg-amber-600' : 'bg-emerald-600'
+                          isBelow ? 'bg-amber-600' : 'bg-teal-700'
                         }`}
                         style={{ width: `${d.percentage || 0}%` }}
                       />
                     </div>
 
                     <p className="text-xs text-slate-600 flex items-center justify-between pt-1">
-                      <span>{d.present} present of {d.closed_sessions} closed sessions</span>
+                      <span>{d.present} attended of {d.closed_sessions} closed sessions</span>
                       {hasPercentage && (
                         <span className="font-semibold text-slate-800">
-                          {d.percentage >= d.limit ? '✓ Compliant' : '⚠ Action required'}
+                          {d.percentage >= d.limit ? 'Compliant' : 'Action required'}
                         </span>
                       )}
                     </p>
@@ -232,70 +232,32 @@ export default function Student() {
             })}
           </div>
         ) : (
-          <Empty title="No enrolled sections yet." children="You have not been assigned to any course sections." />
+          <Empty
+            title="No enrolled sections yet"
+            children="You have not been assigned to any course sections by the academic administrator. Once assigned, your course-by-course attendance percentages will be displayed here."
+            action={
+              <Link to="/student/enrol" className="btn secondary text-xs py-1.5 px-3">
+                Review Biometric Enrolment →
+              </Link>
+            }
+          />
         )}
       </section>
 
       {/* University Attendance Regulations Card */}
-      <div className="card bg-slate-50/80 border-slate-200/90 p-5 space-y-2">
-        <h3 className="text-sm font-bold text-pine flex items-center gap-2">
-          <svg className="h-4 w-4 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="card bg-slate-50 border-slate-200 p-5 space-y-2">
+        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <svg className="h-4 w-4 text-teal-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           University Attendance Policy
         </h3>
         <p className="text-xs text-slate-600 leading-relaxed">
           Attendance percentage is calculated dynamically based on closed academic class sessions.
-          Students must attend at least <strong>{defaultLimit}%</strong> of all scheduled sessions in each enrolled course.
-          In cases of medical or university-approved absences, submit formal documentation to your faculty instructor for review and manual correction.
+          Students must attend at least <strong>{defaultLimit}%</strong> of scheduled sessions in each enrolled course.
+          In cases of medical or university-approved absences, submit formal documentation to your faculty instructor for manual correction.
         </p>
       </div>
-
-      {/* Notifications Section */}
-      <section className="card space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-base font-bold text-pine">Attendance Notifications & Alerts</h2>
-          <span className="text-xs text-slate-400 font-medium">
-            {notes.filter(n => !n.read).length} unread
-          </span>
-        </div>
-
-        {notes.length ? (
-          <div className="divide-y divide-slate-100">
-            {notes.map(n => (
-              <div
-                key={n.id}
-                className="flex items-center justify-between gap-3 py-3 text-xs"
-              >
-                <div className="space-y-0.5">
-                  <p className={n.read ? 'text-slate-400' : 'text-slate-800 font-semibold'}>
-                    {n.message}
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    {new Date(n.created_at).toLocaleString()}
-                  </p>
-                </div>
-                {!n.read && (
-                  <button
-                    type="button"
-                    className="btn secondary shrink-0 text-xs py-1 px-3"
-                    onClick={() =>
-                      task.run(async () => {
-                        await api.post(`/notifications/${n.id}/read`);
-                        setNotes(notes.map(x => (x.id === n.id ? { ...x, read: true } : x)));
-                      })
-                    }
-                  >
-                    Mark read
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="muted text-xs py-4 text-center">No alerts or notifications.</p>
-        )}
-      </section>
     </div>
   );
 }

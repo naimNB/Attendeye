@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..models import FaceEmbedding, Enrolment, Consent, ReviewItem, User, ClassSession, Setting
+from ..models import FaceEmbedding, Enrolment, Consent, ReviewItem, User, ClassSession, Setting, now
 from ..config import settings
 from ..security import decrypt_vector
 from .face_engine import Face, get_face_engine, decode_image
@@ -23,10 +23,21 @@ def gallery_for(db: Session, section_id: int) -> dict[int, list[np.ndarray]]:
     model_setting = db.get(Setting, "embedding_model")
     if model_setting is not None and model_setting.value != settings.face_model:
         raise ValueError("Face model changed. Restore the original model or delete and re-enrol all biometrics.")
-    enrolled = set(db.scalars(select(Enrolment.student_id).where(Enrolment.section_id == section_id)))
+    approved_students = set(db.scalars(
+        select(User.id)
+        .join(Enrolment, Enrolment.student_id == User.id)
+        .where(
+            User.role == "student",
+            User.status == "approved",
+            Enrolment.section_id == section_id,
+        )
+    ))
     consented = set(db.scalars(select(Consent.student_id).where(Consent.revoked_at.is_(None))))
+    eligible = approved_students & consented
+    if not eligible:
+        return {}
     gallery, poses = {}, {}
-    for row in db.scalars(select(FaceEmbedding).where(FaceEmbedding.student_id.in_(enrolled & consented))):
+    for row in db.scalars(select(FaceEmbedding).where(FaceEmbedding.student_id.in_(eligible))):
         gallery.setdefault(row.student_id, []).append(decrypt_vector(row.vector_encrypted))
         poses.setdefault(row.student_id, set()).add(row.pose_label)
     return {sid: vectors for sid, vectors in gallery.items()
@@ -100,43 +111,56 @@ def capture(db: Session, session: ClassSession, images: list[bytes], prompt: str
         accepted = fuse_frames([o.matches for o in observations])
     else:
         accepted = {m.student_id: {"confidence": m.score, "votes": 1}
-                    for m in observations[0].matches if m.reason == "auto"}
+                    for m in observations[0].matches if m.reason == "auto" and m.student_id is not None}
     with mutation_lock:
+        db.expire_all()
         cur_session = db.get(ClassSession, session.id)
-        if cur_session is None or cur_session.status != "open":
-            raise ValueError("Session is no longer open")
-        cur_gallery = gallery_for(db, session.section_id)
+        if cur_session is None or cur_session.status != "open" or not cur_session.starts_at <= now() <= cur_session.ends_at:
+            raise ValueError("Session is no longer open or scheduled window has passed")
+        cur_gallery = gallery_for(db, cur_session.section_id)
         valid_students = set(cur_gallery.keys())
 
         for student_id, value in accepted.items():
             if student_id in valid_students:
-                set_record(db, session.id, student_id, confidence=value["confidence"])
+                set_record(db, cur_session.id, student_id, confidence=value["confidence"])
 
         reviews, boxes, seen = [], [], set()
-        names = {sid: db.get(User, sid).name for sid in gallery}
+        names = {sid: u.name for sid, u in [(s, db.get(User, s)) for s in valid_students] if u is not None}
         for frame_index, observation in enumerate(observations):
             for face, match in zip(observation.faces, observation.matches):
                 reason = match.reason
-                if match.reason == "auto" and match.student_id not in accepted:
-                    reason = "insufficient_votes"
+                if match.reason == "auto":
+                    if match.student_id not in valid_students:
+                        reason = "unknown"
+                    elif match.student_id not in accepted:
+                        reason = "insufficient_votes"
+                elif match.reason == "ambiguous" and not any(c.get("student_id") in valid_students for c in match.candidates):
+                    reason = "unknown"
+
                 box = {"frame": frame_index, "box": face.box.tolist(), "decision": reason,
-                       "student_id": match.student_id if reason == "auto" else None,
+                       "student_id": match.student_id if reason == "auto" and match.student_id in valid_students else None,
                        "width": observation.width, "height": observation.height}
                 if debug:
                     box.update(score=match.score, margin=match.margin)
                 boxes.append(box)
                 if reason != "auto":
+                    candidates = [
+                        {**c, "name": names[c["student_id"]]}
+                        for c in match.candidates
+                        if c.get("student_id") in valid_students
+                    ]
                     # Identity-associated reviews are consolidated across a burst.
-                    key = (match.student_id, reason) if match.student_id is not None else (frame_index, match.face_index)
+                    effective_sid = match.student_id if match.student_id in valid_students else None
+                    key = (effective_sid, reason) if effective_sid is not None else (frame_index, match.face_index)
                     if key in seen: continue
                     seen.add(key)
-                    candidates = [{**c, "name": names.get(c["student_id"], "Student")} for c in match.candidates]
-                    item = ReviewItem(session_id=session.id, thumbnail_path=save_thumbnail(face.crop),
+                    item = ReviewItem(session_id=cur_session.id, thumbnail_path=save_thumbnail(face.crop),
                                       candidates_json=json.dumps(candidates), reason=reason)
                     db.add(item); db.flush(); reviews.append(item.id)
         db.commit()
     elapsed = round((time.perf_counter() - started) * 1000, 1)
     log.info("Capture complete: frames=%d elapsed_ms=%.1f", len(images), elapsed)
-    return {"accepted": [{"student_id": sid, "name": names[sid], **value} for sid, value in accepted.items()],
+    return {"accepted": [{"student_id": sid, "name": names[sid], **value}
+                         for sid, value in accepted.items() if sid in valid_students and sid in names],
             "review_ids": reviews, "boxes": boxes, "elapsed_ms": elapsed,
             "debug": debug, "faces_detected": sum(len(o.faces) for o in observations)}

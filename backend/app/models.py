@@ -56,6 +56,7 @@ class Section(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"))
     name: Mapped[str] = mapped_column(String(80))
+    room: Mapped[str | None] = mapped_column(String(80), nullable=True)
     __table_args__ = (UniqueConstraint("course_id", "name"),)
 
 
@@ -94,6 +95,7 @@ class ClassSession(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     section_id: Mapped[int] = mapped_column(ForeignKey("sections.id"), index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    room: Mapped[str | None] = mapped_column(String(80), nullable=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime)
     ends_at: Mapped[datetime] = mapped_column(DateTime)
     status: Mapped[str] = mapped_column(String(10), default="open")

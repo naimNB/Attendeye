@@ -107,6 +107,11 @@ async def unexpected(request: Request, exc: Exception):
     return JSONResponse({"detail": "Operation failed. Check model setup and server configuration."}, status_code=500)
 
 
+@app.get("/")
+def root() -> dict:
+    return {"status": "ok", "service": "PUB AttendEye API", "docs": "/docs", "health": "/health"}
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "PUB AttendEye"}

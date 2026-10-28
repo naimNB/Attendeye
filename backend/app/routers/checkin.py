@@ -134,19 +134,11 @@ def checkin(session_id: int, db: DB, student: Student,
         with mutation_lock:
             row = session_access(db, student, session_id, capture=True)
             if not row.require_qr: raise HTTPException(409, "This session does not use QR check-in")
+            t_data = None
             if ticket_token:
                 t_data = decode_token(ticket_token, "checkin_ticket")
                 if t_data.get("sub") != str(student.id) or t_data.get("sid") != session_id:
                     raise HTTPException(403, "Ticket is bound to another student or session")
-                t_res = db.execute(update(CheckinTicket).where(
-                    CheckinTicket.id == t_data.get("tid"),
-                    CheckinTicket.student_id == student.id,
-                    CheckinTicket.session_id == session_id,
-                    CheckinTicket.used.is_(False),
-                    CheckinTicket.expires_at > now()
-                ).values(used=True))
-                if t_res.rowcount != 1:
-                    raise HTTPException(409, "Check-in ticket expired or already used. Scan QR to start fresh.")
             elif qr_token:
                 verify_qr(qr_token, session_id)
             else:
@@ -158,6 +150,21 @@ def checkin(session_id: int, db: DB, student: Student,
                                   AttendanceRecord.student_id == student.id))
             if existing is not None:
                 raise HTTPException(409, "Attendance record exists; contact the teacher")
+
+            if t_data is not None:
+                chal_data = decode_token(challenge_token, "challenge")
+                if t_data.get("cid") and chal_data.get("cid") != t_data.get("cid"):
+                    raise HTTPException(403, "Ticket is bound to a different challenge")
+                t_res = db.execute(update(CheckinTicket).where(
+                    CheckinTicket.id == t_data.get("tid"),
+                    CheckinTicket.student_id == student.id,
+                    CheckinTicket.session_id == session_id,
+                    CheckinTicket.used.is_(False),
+                    CheckinTicket.expires_at > now()
+                ).values(used=True))
+                if t_res.rowcount != 1:
+                    raise HTTPException(409, "Check-in ticket expired or already used. Scan QR to start fresh.")
+
             # Consume challenge atomically
             prompt = consume(db, challenge_token, student.id, session_id)
             gallery = gallery_for(db, row.section_id)
@@ -186,12 +193,21 @@ def checkin(session_id: int, db: DB, student: Student,
             raise HTTPException(422, "Face or passive liveness verification failed")
 
         with mutation_lock:
-            # Re-verify before final commit
-            if db.get(QRRedemption, (session_id, student.id)):
-                raise HTTPException(409, "Already checked in")
-            db.add(QRRedemption(session_id=session_id, student_id=student.id))
-            set_record(db, session_id, student.id, confidence=votes[student.id]["confidence"])
-            db.commit()
+            try:
+                db.expire_all()
+                cur_row = session_access(db, student, session_id, capture=True)
+                fresh_gallery = gallery_for(db, cur_row.section_id)
+                if student.id not in fresh_gallery:
+                    raise HTTPException(409, "Student is no longer eligible for check-in")
+                # Re-verify before final commit
+                if db.get(QRRedemption, (session_id, student.id)):
+                    raise HTTPException(409, "Already checked in")
+                db.add(QRRedemption(session_id=session_id, student_id=student.id))
+                set_record(db, session_id, student.id, confidence=votes[student.id]["confidence"])
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
         return {"present": True}
     finally:
         processing_slots.release()
