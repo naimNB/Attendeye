@@ -273,4 +273,4 @@ Primary sources used for model contracts and dependency/security review:
 - [Vite Windows path advisory](https://github.com/vitejs/vite/security/advisories/GHSA-fx2h-pf6j-xcff), fixed in the selected 6.4.3 branch release.
 - [Axios releases](https://github.com/axios/axios/releases) for maintained HTTP-client security fixes.
 
-Dependency pins are a source snapshot, not a resolved cross-platform lockfile. The generator did not run package installation or a package advisory scanner. After validating on your platforms, retain npm's generated lockfile and a tested Python environment snapshot for reproducibility.
+Dependency pins are a source snapshot, not a resolved cross-platform lockfile. The generator did not run package installation or a package advisory scanner. After validating on your platforms, retain npm's generated lockfile and a tested Python environment snapshot for reproducibility...
